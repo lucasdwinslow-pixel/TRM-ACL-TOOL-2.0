@@ -1077,7 +1077,8 @@ function Tab2({ currentData: d }) {
   const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
   const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
 
-  const rows = [           key: "weeks_postop",         cur: d.patient.weeksPostOp,   u: " wks", h: true },
+  const rows = [
+    { label: "Weeks Post-Op",           cur: d.patient.weeksPostOp,   u: " wks", h: true },
     { label: `Flex ${inv} (°)`,         key: `knee_flexion_${inv.toLowerCase()}`,   cur: invR ? d.flexR : d.flexL, u: "°", h: true },
     { label: `Flex ${uninv} (°)`,       key: `knee_flexion_${uninv.toLowerCase()}`, cur: invR ? d.flexL : d.flexR, u: "°", h: true },
     { label: `Ext ${inv} (°)`,          key: `knee_extension_${inv.toLowerCase()}`, cur: invR ? d.extR : d.extL,   u: "°", h: null },
