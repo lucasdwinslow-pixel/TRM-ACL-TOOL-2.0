@@ -37,6 +37,23 @@ const calcNorm = (nm, bwLbs) => {
   return (toNum(nm) / (toNum(bwLbs) * 0.453592)).toFixed(2);
 };
 
+// Hop helpers — convert ft+in to total inches, average 3 trials
+const feetInToIn = (ft, inch) => {
+  const f = toNum(ft), i = toNum(inch);
+  if (f === 0 && i === 0) return null;
+  return f * 12 + i;
+};
+const avgTrials = (trials) => {
+  const vals = trials.map(t => feetInToIn(t.ft, t.in)).filter(v => v !== null && v > 0);
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+};
+const avgTimedTrials = (trials) => {
+  const vals = trials.map(t => toNum(t.sec)).filter(v => v > 0);
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+};
+
 // Y-Balance: composite = (ant + pm + pl) / (limbLen * 3) * 100
 // Each direction pct = reach / limbLen * 100
 const calcYBalance = (ant, pm, pl, limbLen) => {
@@ -224,7 +241,7 @@ function buildCompareParagraph(rows, inv, wks, graft) {
     const v = parseFloat(keLSIRow.cur);
     if (v >= 90) parts.push(`Knee extension LSI of ${keLSIRow.cur}% meets the 90% return-to-sport threshold.`);
     else if (v >= 80) parts.push(`Knee extension LSI of ${keLSIRow.cur}% is approaching but has not yet reached the 90% return-to-sport threshold.`);
-    else parts.push(`Knee extension LSI of ${keLSIRow.cur}% remains below the 80% threshold, indicating continued quadriceps strength deficiency on the involved side.`);
+    else parts.push(`Knee extension LSI of ${keLSIRow.cur}% remains below the 90% threshold, indicating continued quadriceps strength deficiency on the involved side.`);
   }
 
   const hopRows = rows.filter(r => r.label.includes("Hop LSI") && r.cur);
@@ -257,24 +274,28 @@ function buildNote(d) {
   const gPct = gBig > 0 ? (((gBig - gSmall) / gBig) * 100).toFixed(1) : null;
   const gSide = gR < gL ? "Right deficit" : gL < gR ? "Left deficit" : "Equal";
 
-  const torRnm = calcTorqueNm(d.forceR, d.tibR);
-  const torLnm = calcTorqueNm(d.forceL, d.tibL);
+  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
+  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
 
+  const hopAvgSI = avgTrials(d.hops.singleI), hopAvgSU = avgTrials(d.hops.singleU);
+  const hopAvgTI = avgTrials(d.hops.tripleI), hopAvgTU = avgTrials(d.hops.tripleU);
+  const hopAvgCI = avgTrials(d.hops.crossI),  hopAvgCU = avgTrials(d.hops.crossU);
+  const hopAvgdI = avgTimedTrials(d.hops.timedI), hopAvgdU = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: calcLSI(d.hops.singleI, d.hops.singleU),
-    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
-    cross:  calcLSI(d.hops.crossI, d.hops.crossU),
-    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
+    single: hopAvgSI !== null && hopAvgSU !== null && hopAvgSU > 0 ? ((hopAvgSI/hopAvgSU)*100).toFixed(1) : null,
+    triple: hopAvgTI !== null && hopAvgTU !== null && hopAvgTU > 0 ? ((hopAvgTI/hopAvgTU)*100).toFixed(1) : null,
+    cross:  hopAvgCI !== null && hopAvgCU !== null && hopAvgCU > 0 ? ((hopAvgCI/hopAvgCU)*100).toFixed(1) : null,
+    timed:  hopAvgdI !== null && hopAvgdU !== null && hopAvgdI > 0 ? ((hopAvgdU/hopAvgdI)*100).toFixed(1) : null,
   };
 
   // Y-Balance composites
   const yb = d.yBalance || {};
-  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLenR);
-  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLenL);
+  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
+  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
 
   const lines = [];
   const add = (l) => lines.push(l);
@@ -288,13 +309,11 @@ function buildNote(d) {
   addIf(hasVal(d.patient.weeksPostOp), `Weeks Post-Op: ${d.patient.weeksPostOp}`);
   add(`Involved Side: ${inv}`); br();
 
-  if (hasVal(d.bw) || hasVal(d.tibR) || hasVal(d.tibL) || hasVal(d.limbLenR) || hasVal(d.limbLenL)) {
+  if (hasVal(d.bw) || hasVal(d.tibLen) || hasVal(d.limbLen)) {
     add("BODY METRICS");
-    addIf(hasVal(d.bw),       `Body Weight: ${d.bw} lbs`);
-    addIf(hasVal(d.tibR),     `Tibial Length - Right: ${d.tibR} cm`);
-    addIf(hasVal(d.tibL),     `Tibial Length - Left: ${d.tibL} cm`);
-    addIf(hasVal(d.limbLenR), `Limb Length - Right (ASIS to MM): ${d.limbLenR} cm`);
-    addIf(hasVal(d.limbLenL), `Limb Length - Left (ASIS to MM): ${d.limbLenL} cm`);
+    addIf(hasVal(d.bw),      `Body Weight: ${d.bw} lbs`);
+    addIf(hasVal(d.tibLen),  `Tibial Length: ${d.tibLen} cm`);
+    addIf(hasVal(d.limbLen), `Limb Length (ASIS to MM): ${d.limbLen} cm`);
     br();
   }
 
@@ -372,18 +391,16 @@ function buildNote(d) {
   if (ybHas) {
     add("Y-BALANCE TEST");
     add("Benchmark: Composite score ≥ 90% of limb length. Anterior reach side difference > 4 cm is clinically significant.");
-    if (hasVal(d.limbLenR)) {
-      add(`Right Limb Length: ${d.limbLenR} cm`);
-      addIf(hasVal(yb.rAnt), `  Anterior: ${yb.rAnt} cm (${calcYDir(yb.rAnt, d.limbLenR)}% LL)`);
-      addIf(hasVal(yb.rPM),  `  Posteromedial: ${yb.rPM} cm (${calcYDir(yb.rPM, d.limbLenR)}% LL)`);
-      addIf(hasVal(yb.rPL),  `  Posterolateral: ${yb.rPL} cm (${calcYDir(yb.rPL, d.limbLenR)}% LL)`);
+    if (hasVal(d.limbLen)) {
+      add(`Right Limb Length: ${d.limbLen} cm`);
+      addIf(hasVal(yb.rAnt), `  Anterior: ${yb.rAnt} cm (${calcYDir(yb.rAnt, d.limbLen)}% LL)`);
+      addIf(hasVal(yb.rPM),  `  Posteromedial: ${yb.rPM} cm (${calcYDir(yb.rPM, d.limbLen)}% LL)`);
+      addIf(hasVal(yb.rPL),  `  Posterolateral: ${yb.rPL} cm (${calcYDir(yb.rPL, d.limbLen)}% LL)`);
       addIf(ybCompR !== null, `  Composite Score: ${ybCompR}% limb length`);
-    }
-    if (hasVal(d.limbLenL)) {
-      add(`Left Limb Length: ${d.limbLenL} cm`);
-      addIf(hasVal(yb.lAnt), `  Anterior: ${yb.lAnt} cm (${calcYDir(yb.lAnt, d.limbLenL)}% LL)`);
-      addIf(hasVal(yb.lPM),  `  Posteromedial: ${yb.lPM} cm (${calcYDir(yb.lPM, d.limbLenL)}% LL)`);
-      addIf(hasVal(yb.lPL),  `  Posterolateral: ${yb.lPL} cm (${calcYDir(yb.lPL, d.limbLenL)}% LL)`);
+      add(`Left Limb Length: ${d.limbLen} cm`);
+      addIf(hasVal(yb.lAnt), `  Anterior: ${yb.lAnt} cm (${calcYDir(yb.lAnt, d.limbLen)}% LL)`);
+      addIf(hasVal(yb.lPM),  `  Posteromedial: ${yb.lPM} cm (${calcYDir(yb.lPM, d.limbLen)}% LL)`);
+      addIf(hasVal(yb.lPL),  `  Posterolateral: ${yb.lPL} cm (${calcYDir(yb.lPL, d.limbLen)}% LL)`);
       addIf(ybCompL !== null, `  Composite Score: ${ybCompL}% limb length`);
     }
     if (hasVal(yb.rAnt) && hasVal(yb.lAnt)) {
@@ -394,19 +411,20 @@ function buildNote(d) {
   }
 
   // Hops
-  const hopTests = [
-    ["Single Hop for Distance", d.hops.singleI, d.hops.singleU, hopLSIs.single, "cm"],
-    ["Triple Hop for Distance", d.hops.tripleI, d.hops.tripleU, hopLSIs.triple, "cm"],
-    ["Crossover Hop for Distance", d.hops.crossI, d.hops.crossU, hopLSIs.cross, "cm"],
-    ["6-Meter Timed Hop", d.hops.timedI, d.hops.timedU, hopLSIs.timed, "sec"],
-  ].filter(([, i, u]) => hasVal(i) || hasVal(u));
+  const hopNoteTests = [
+    ["Single Hop for Distance", hopAvgSI, hopAvgSU, hopLSIs.single],
+    ["Triple Hop for Distance", hopAvgTI, hopAvgTU, hopLSIs.triple],
+    ["Crossover Hop for Distance", hopAvgCI, hopAvgCU, hopLSIs.cross],
+    ["6-Meter Timed Hop", hopAvgdI, hopAvgdU, hopLSIs.timed, true],
+  ].filter(([, i, u]) => i !== null || u !== null);
 
-  if (hopTests.length > 0) {
+  if (hopNoteTests.length > 0) {
     add("HOP TESTING");
-    hopTests.forEach(([name, i, u, lsiVal, unit]) => {
+    hopNoteTests.forEach(([name, avgI, avgU, lsiVal, isTimed]) => {
       add(`${name}:`);
-      addIf(hasVal(i), `  ${inv} (Involved): ${i} ${unit}`);
-      addIf(hasVal(u), `  ${uninv} (Uninvolved): ${u} ${unit}`);
+      const unit = isTimed ? "sec" : "in";
+      addIf(avgI !== null, `  ${inv} (Involved) avg: ${avgI.toFixed(1)} ${unit}`);
+      addIf(avgU !== null, `  ${uninv} (Uninvolved) avg: ${avgU.toFixed(1)} ${unit}`);
       addIf(lsiVal !== null, `  LSI: ${lsiVal}%`);
       br();
     });
@@ -429,18 +447,22 @@ function buildLetter(d, ptName, therapistName, clinic, impression) {
   const invR = inv === "Right";
   const uninv = invR ? "Left" : "Right";
 
-  const torRnm = calcTorqueNm(d.forceR, d.tibR);
-  const torLnm = calcTorqueNm(d.forceL, d.tibL);
+  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
+  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI  = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI   = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
   const normInv = invR ? normR : normL;
+  const hopAvgSIl = avgTrials(d.hops.singleI), hopAvgSUl = avgTrials(d.hops.singleU);
+  const hopAvgTIl = avgTrials(d.hops.tripleI), hopAvgTUl = avgTrials(d.hops.tripleU);
+  const hopAvgCIl = avgTrials(d.hops.crossI),  hopAvgCUl = avgTrials(d.hops.crossU);
+  const hopAvgdIl = avgTimedTrials(d.hops.timedI), hopAvgdUl = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: calcLSI(d.hops.singleI, d.hops.singleU),
-    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
-    cross:  calcLSI(d.hops.crossI, d.hops.crossU),
-    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
+    single: hopAvgSIl !== null && hopAvgSUl !== null && hopAvgSUl > 0 ? ((hopAvgSIl/hopAvgSUl)*100).toFixed(1) : null,
+    triple: hopAvgTIl !== null && hopAvgTUl !== null && hopAvgTUl > 0 ? ((hopAvgTIl/hopAvgTUl)*100).toFixed(1) : null,
+    cross:  hopAvgCIl !== null && hopAvgCUl !== null && hopAvgCUl > 0 ? ((hopAvgCIl/hopAvgCUl)*100).toFixed(1) : null,
+    timed:  hopAvgdIl !== null && hopAvgdUl !== null && hopAvgdIl > 0 ? ((hopAvgdUl/hopAvgdIl)*100).toFixed(1) : null,
   };
 
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
@@ -499,8 +521,8 @@ function buildLetter(d, ptName, therapistName, clinic, impression) {
 
   // Y-Balance
   const yb = d.yBalance || {};
-  const ybCompInv = invR ? calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLenR) : calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLenL);
-  const ybCompUninv = invR ? calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLenL) : calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLenR);
+  const ybCompInv = invR ? calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen) : calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
+  const ybCompUninv = invR ? calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen) : calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
   if (ybCompInv || ybCompUninv) {
     add("Y-BALANCE TEST");
     let yLine = "Y-Balance testing ";
@@ -587,25 +609,29 @@ function Tab1({ data: d, setData: setD }) {
   const gPct = () => { const b = Math.max(gTotR(), gTotL()), s = Math.min(gTotR(), gTotL()); return b > 0 ? (((b - s) / b) * 100).toFixed(1) : null; };
   const gSide = () => { const r = gTotR(), l = gTotL(); return r < l ? "Right deficit" : l < r ? "Left deficit" : "Equal"; };
 
-  const torRnm = calcTorqueNm(d.forceR, d.tibR);
-  const torLnm = calcTorqueNm(d.forceL, d.tibL);
+  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
+  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI  = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
 
+  const hopAvgSI = avgTrials(d.hops.singleI), hopAvgSU = avgTrials(d.hops.singleU);
+  const hopAvgTI = avgTrials(d.hops.tripleI), hopAvgTU = avgTrials(d.hops.tripleU);
+  const hopAvgCI = avgTrials(d.hops.crossI),  hopAvgCU = avgTrials(d.hops.crossU);
+  const hopAvgdI = avgTimedTrials(d.hops.timedI), hopAvgdU = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: calcLSI(d.hops.singleI, d.hops.singleU),
-    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
-    cross:  calcLSI(d.hops.crossI,  d.hops.crossU),
-    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
+    single: hopAvgSI !== null && hopAvgSU !== null && hopAvgSU > 0 ? ((hopAvgSI/hopAvgSU)*100).toFixed(1) : null,
+    triple: hopAvgTI !== null && hopAvgTU !== null && hopAvgTU > 0 ? ((hopAvgTI/hopAvgTU)*100).toFixed(1) : null,
+    cross:  hopAvgCI !== null && hopAvgCU !== null && hopAvgCU > 0 ? ((hopAvgCI/hopAvgCU)*100).toFixed(1) : null,
+    timed:  hopAvgdI !== null && hopAvgdU !== null && hopAvgdI > 0 ? ((hopAvgdU/hopAvgdI)*100).toFixed(1) : null,
   };
 
   // Y-Balance calculations
   const yb = d.yBalance || {};
   const setYB = (k, v) => sd("yBalance", { ...yb, [k]: v });
-  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLenR);
-  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLenL);
+  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
+  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
   const ybCompInv = invR ? ybCompR : ybCompL;
   const ybCompUninv = invR ? ybCompL : ybCompR;
   const antDiff = hasVal(yb.rAnt) && hasVal(yb.lAnt)
@@ -686,14 +712,10 @@ function Tab1({ data: d, setData: setD }) {
       <Card title="Body Metrics">
         <R3>
           <Field label="Body Weight" unit="lbs" value={d.bw} onChange={v => sd("bw", v)} />
-          <Field label="Tibial Length — Right" unit="cm" value={d.tibR} onChange={v => sd("tibR", v)} placeholder="joint line to HHD pad" />
-          <Field label="Tibial Length — Left"  unit="cm" value={d.tibL} onChange={v => sd("tibL", v)} placeholder="joint line to HHD pad" />
+          <Field label="Tibial Length" unit="cm" value={d.tibLen} onChange={v => sd("tibLen", v)} placeholder="joint line to HHD pad" />
+          <Field label="Limb Length" unit="cm" value={d.limbLen} onChange={v => sd("limbLen", v)} placeholder="ASIS to medial malleolus" />
         </R3>
-        <R2>
-          <Field label="Limb Length — Right" unit="cm" value={d.limbLenR} onChange={v => sd("limbLenR", v)} placeholder="ASIS to medial malleolus" />
-          <Field label="Limb Length — Left"  unit="cm" value={d.limbLenL} onChange={v => sd("limbLenL", v)} placeholder="ASIS to medial malleolus" />
-        </R2>
-        <div style={{ fontSize: 11, color: MUTED }}>Tibial length = lateral joint line to HHD pad (for torque). Limb length = ASIS to medial malleolus (for Y-Balance).</div>
+        <div style={{ fontSize: 11, color: MUTED }}>Tibial length = lateral joint line to HHD pad (for torque). Limb length = ASIS to medial malleolus (for Y-Balance). One measurement used for both sides.</div>
       </Card>
 
       {/* ROM */}
@@ -819,8 +841,8 @@ function Tab1({ data: d, setData: setD }) {
         </div>
 
         {[
-          ["Right", "r", d.limbLenR, ybCompR],
-          ["Left",  "l", d.limbLenL, ybCompL],
+          ["Right", "r", d.limbLen, ybCompR],
+          ["Left",  "l", d.limbLen, ybCompL],
         ].map(([side, k, limbLen, comp]) => (
           <div key={k} style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr 1fr 100px", gap: 8, marginBottom: 8, alignItems: "center" }}>
             <div>
@@ -839,13 +861,13 @@ function Tab1({ data: d, setData: setD }) {
         ))}
 
         {/* Per-direction % of limb length breakdown */}
-        {(hasVal(d.limbLenR) || hasVal(d.limbLenL)) && (
+        {hasVal(d.limbLen) && (
           <div style={{ marginTop: 12, background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, padding: "12px 16px" }}>
             <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Reach as % of Limb Length</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               {[
-                ["Right", "r", d.limbLenR, [yb.rAnt, yb.rPM, yb.rPL]],
-                ["Left",  "l", d.limbLenL, [yb.lAnt, yb.lPM, yb.lPL]],
+                ["Right", "r", d.limbLen, [yb.rAnt, yb.rPM, yb.rPL]],
+                ["Left",  "l", d.limbLen, [yb.lAnt, yb.lPM, yb.lPL]],
               ].map(([side, k, ll, [ant, pm, pl]]) => (
                 hasVal(ll) && (
                   <div key={k}>
@@ -882,25 +904,90 @@ function Tab1({ data: d, setData: setD }) {
 
       {/* Hops */}
       <Card title="Hop Testing">
-        <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 1fr 80px", gap: 8, marginBottom: 10 }}>
-          {["Test", `${inv} (Involved)`, `${uninv} (Uninvolved)`, "LSI"].map(h => (
-            <div key={h} style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>{h}</div>
-          ))}
+        <div style={{ fontSize: 11, color: MUTED, marginBottom: 14 }}>
+          Enter up to 3 trials per side in feet + inches. Averages are calculated automatically and used for LSI comparison (in inches).
         </div>
         {[
-          ["Single Hop","cm","singleI","singleU",hopLSIs.single],
-          ["Triple Hop","cm","tripleI","tripleU",hopLSIs.triple],
-          ["Crossover Hop","cm","crossI","crossU",hopLSIs.cross],
-          ["6m Timed Hop","sec","timedI","timedU",hopLSIs.timed],
-        ].map(([name, unit, ki, ku, lsiVal]) => (
-          <div key={name} style={{ display: "grid", gridTemplateColumns: "150px 1fr 1fr 80px", gap: 8, alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#ccc" }}>{name}<br /><span style={{ fontSize: 10, color: MUTED }}>{unit}</span></div>
-            <input style={inp} type="number" step="0.1" placeholder={`— ${unit}`} value={d.hops[ki]} onChange={e => sd("hops", { ...d.hops, [ki]: e.target.value })} />
-            <input style={inp} type="number" step="0.1" placeholder={`— ${unit}`} value={d.hops[ku]} onChange={e => sd("hops", { ...d.hops, [ku]: e.target.value })} />
-            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 800, fontFamily: "monospace", color: lsiColor(lsiVal) }}>{lsiVal ? lsiVal + "%" : "—"}</div>
+          { name: "Single Hop", ki: "singleI", ku: "singleU", lsiVal: hopLSIs.single, avgI: hopAvgSI, avgU: hopAvgSU, timed: false },
+          { name: "Triple Hop", ki: "tripleI", ku: "tripleU", lsiVal: hopLSIs.triple, avgI: hopAvgTI, avgU: hopAvgTU, timed: false },
+          { name: "Crossover Hop", ki: "crossI", ku: "crossU", lsiVal: hopLSIs.cross, avgI: hopAvgCI, avgU: hopAvgCU, timed: false },
+          { name: "6m Timed Hop", ki: "timedI", ku: "timedU", lsiVal: hopLSIs.timed, avgI: hopAvgdI, avgU: hopAvgdU, timed: true },
+        ].map(({ name, ki, ku, lsiVal, avgI, avgU, timed }) => (
+          <div key={name} style={{ marginBottom: 18, padding: "14px 16px", background: "#111", borderRadius: 10, border: `1px solid ${BORDER}` }}>
+            {/* Test header row */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: WHITE }}>{name}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                {avgI !== null && <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textTransform: "uppercase", marginBottom: 2 }}>Avg {inv}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, fontFamily: "monospace", color: LIME }}>{avgI.toFixed(1)} {timed ? "sec" : "in"}</div>
+                </div>}
+                {avgU !== null && <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textTransform: "uppercase", marginBottom: 2 }}>Avg {uninv}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, fontFamily: "monospace", color: WHITE }}>{avgU.toFixed(1)} {timed ? "sec" : "in"}</div>
+                </div>}
+                <div style={{ textAlign: "center", padding: "6px 14px", borderRadius: 8, background: lsiVal ? lsiColor(lsiVal) + "22" : "#0f0f0f", border: `1px solid ${lsiVal ? lsiColor(lsiVal) + "55" : BORDER}` }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textTransform: "uppercase", marginBottom: 2 }}>LSI</div>
+                  <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "monospace", color: lsiColor(lsiVal) }}>{lsiVal ? lsiVal + "%" : "—"}</div>
+                </div>
+              </div>
+            </div>
+            {/* Trial inputs */}
+            <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", alignSelf: "end", paddingBottom: 6 }}>Trial</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", textAlign: "center" }}>{inv} (Involved)</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", textAlign: "center" }}>{uninv} (Uninvolved)</div>
+            </div>
+            {[0,1,2].map(t => (
+              <div key={t} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8, marginTop: 6, alignItems: "center" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>#{t+1}</div>
+                {timed ? (
+                  <>
+                    <input style={inp} type="number" step="0.01" placeholder="sec"
+                      value={d.hops[ki][t].sec}
+                      onChange={e => { const h = d.hops[ki].map((x,i2)=>i2===t?{...x,sec:e.target.value}:x); sd("hops",{...d.hops,[ki]:h}); }} />
+                    <input style={inp} type="number" step="0.01" placeholder="sec"
+                      value={d.hops[ku][t].sec}
+                      onChange={e => { const h = d.hops[ku].map((x,i2)=>i2===t?{...x,sec:e.target.value}:x); sd("hops",{...d.hops,[ku]:h}); }} />
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                      <input style={{...inp, textAlign:"center"}} type="number" step="1" min="0" placeholder="ft"
+                        value={d.hops[ki][t].ft}
+                        onChange={e => { const h = d.hops[ki].map((x,i2)=>i2===t?{...x,ft:e.target.value}:x); sd("hops",{...d.hops,[ki]:h}); }} />
+                      <input style={{...inp, textAlign:"center"}} type="number" step="0.25" min="0" max="11.75" placeholder="in"
+                        value={d.hops[ki][t].in}
+                        onChange={e => { const h = d.hops[ki].map((x,i2)=>i2===t?{...x,in:e.target.value}:x); sd("hops",{...d.hops,[ki]:h}); }} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                      <input style={{...inp, textAlign:"center"}} type="number" step="1" min="0" placeholder="ft"
+                        value={d.hops[ku][t].ft}
+                        onChange={e => { const h = d.hops[ku].map((x,i2)=>i2===t?{...x,ft:e.target.value}:x); sd("hops",{...d.hops,[ku]:h}); }} />
+                      <input style={{...inp, textAlign:"center"}} type="number" step="0.25" min="0" max="11.75" placeholder="in"
+                        value={d.hops[ku][t].in}
+                        onChange={e => { const h = d.hops[ku].map((x,i2)=>i2===t?{...x,in:e.target.value}:x); sd("hops",{...d.hops,[ku]:h}); }} />
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {!timed && (
+              <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8, marginTop: 4 }}>
+                <div />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>ft</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>in</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>ft</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>in</div>
+                </div>
+              </div>
+            )}
           </div>
         ))}
-        <div style={{ marginTop: 10, padding: "10px 16px", background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, display: "flex", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ marginTop: 4, padding: "10px 16px", background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, display: "flex", gap: 20, flexWrap: "wrap" }}>
           {[["≥90% — RTS Met", LIME],["80–89% — Borderline", GOLD],["<80% — Not Met", RED_BAD]].map(([l, c]) => (
             <span key={l} style={{ fontSize: 11, fontWeight: 700, color: c }}>■ {l}</span>
           ))}
@@ -963,31 +1050,34 @@ function Tab2({ currentData: d }) {
     const result = {};
     text.split("\n").map(l => l.trim()).filter(Boolean).forEach(line => {
       const m = line.match(/^([^:]+):\s*(.+)$/);
-      if (m) result[m[1].trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")] = m[2].trim();
+      if (m) result[m[1].trim().toLowerCase()] = m[2].trim();
     });
     return result;
   };
 
   const invR = d.patient.involvedSide === "Right";
   const inv = d.patient.involvedSide, uninv = invR ? "Left" : "Right";
-  const torRnm = calcTorqueNm(d.forceR, d.tibR);
-  const torLnm = calcTorqueNm(d.forceL, d.tibL);
+  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
+  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI  = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI   = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
+  const hopAvgSI2 = avgTrials(d.hops.singleI), hopAvgSU2 = avgTrials(d.hops.singleU);
+  const hopAvgTI2 = avgTrials(d.hops.tripleI), hopAvgTU2 = avgTrials(d.hops.tripleU);
+  const hopAvgCI2 = avgTrials(d.hops.crossI),  hopAvgCU2 = avgTrials(d.hops.crossU);
+  const hopAvgdI2 = avgTimedTrials(d.hops.timedI), hopAvgdU2 = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: calcLSI(d.hops.singleI, d.hops.singleU),
-    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
-    cross:  calcLSI(d.hops.crossI, d.hops.crossU),
-    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
+    single: hopAvgSI2 !== null && hopAvgSU2 !== null && hopAvgSU2 > 0 ? ((hopAvgSI2/hopAvgSU2)*100).toFixed(1) : null,
+    triple: hopAvgTI2 !== null && hopAvgTU2 !== null && hopAvgTU2 > 0 ? ((hopAvgTI2/hopAvgTU2)*100).toFixed(1) : null,
+    cross:  hopAvgCI2 !== null && hopAvgCU2 !== null && hopAvgCU2 > 0 ? ((hopAvgCI2/hopAvgCU2)*100).toFixed(1) : null,
+    timed:  hopAvgdI2 !== null && hopAvgdU2 !== null && hopAvgdI2 > 0 ? ((hopAvgdU2/hopAvgdI2)*100).toFixed(1) : null,
   };
   const yb = d.yBalance || {};
-  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLenR);
-  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLenL);
+  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
+  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
 
-  const rows = [
-    { label: "Weeks Post-Op",           key: "weeks_postop",         cur: d.patient.weeksPostOp,   u: " wks", h: true },
+  const rows = [           key: "weeks_postop",         cur: d.patient.weeksPostOp,   u: " wks", h: true },
     { label: `Flex ${inv} (°)`,         key: `knee_flexion_${inv.toLowerCase()}`,   cur: invR ? d.flexR : d.flexL, u: "°", h: true },
     { label: `Flex ${uninv} (°)`,       key: `knee_flexion_${uninv.toLowerCase()}`, cur: invR ? d.flexL : d.flexR, u: "°", h: true },
     { label: `Ext ${inv} (°)`,          key: `knee_extension_${inv.toLowerCase()}`, cur: invR ? d.extR : d.extL,   u: "°", h: null },
@@ -1007,10 +1097,41 @@ function Tab2({ currentData: d }) {
     { label: "Pro Agility (sec)",       key: "best_time",            cur: d.agilityTime,  u: " sec", h: false },
   ];
 
+  // Map each row to the exact label text written by buildNote
+  const parseKeyMap = {
+    "Weeks Post-Op": ["weeks post-op"],
+    [`Flex ${inv} (°)`]: [`knee flexion - ${inv.toLowerCase()}`],
+    [`Flex ${uninv} (°)`]: [`knee flexion - ${uninv.toLowerCase()}`],
+    [`Ext ${inv} (°)`]: [`knee extension - ${inv.toLowerCase()}`],
+    "Girth Asymmetry (%)": ["girth asymmetry"],
+    [`KE Strength ${inv} (lbs)`]: [`ke strength ${inv.toLowerCase()}`, `${inv.toLowerCase()}`],
+    "KE LSI (%)": ["limb symmetry index"],
+    "Quadriceps Index (%)": ["quadriceps index"],
+    "Squat LSI (%)": ["lsi"],
+    "CMJ Jump Height (cm)": ["jump height (impulse-derived)"],
+    [`SLDJ RSI ${inv}`]: [`rsi - ${inv.toLowerCase()}`],
+    "Y-Balance Composite Right (%)": ["composite score", "right composite"],
+    "Y-Balance Composite Left (%)": ["composite score", "left composite"],
+    "Single Hop LSI (%)": ["single hop for distance", "single hop lsi"],
+    "Triple Hop LSI (%)": ["triple hop for distance", "triple hop lsi"],
+    "Crossover Hop LSI (%)": ["crossover hop for distance", "crossover hop lsi"],
+    "6m Timed Hop LSI (%)": ["6-meter timed hop", "6m timed hop lsi"],
+    "Pro Agility (sec)": ["best time", "pro agility"],
+  };
+
   const getOld = (row) => {
     if (!parsed) return null;
-    for (const v of [row.key, row.key.replace(/_/g,""), row.label.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"")]) {
-      if (parsed[v] !== undefined) { const n = parseFloat(parsed[v]); return isNaN(n) ? parsed[v] : n.toString(); }
+    const searchKeys = parseKeyMap[row.label] || [row.label.toLowerCase()];
+    for (const [k, v] of Object.entries(parsed)) {
+      const kl = k.toLowerCase();
+      for (const sk of searchKeys) {
+        if (kl.includes(sk)) {
+          // extract the numeric part — look for a number in the value
+          const match = v.match(/(\d+\.?\d*)/);
+          if (match) return match[1];
+          return v;
+        }
+      }
     }
     return null;
   };
@@ -1094,8 +1215,8 @@ function Tab2({ currentData: d }) {
 // ─── TAB 3: PROGRESSION CRITERIA ─────────────────────────────────────────────
 function Tab3({ currentData: d }) {
   const invR = d.patient.involvedSide === "Right";
-  const torRnm = calcTorqueNm(d.forceR, d.tibR);
-  const torLnm = calcTorqueNm(d.forceL, d.tibL);
+  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
+  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
   const normInv = invR ? calcNorm(torRnm, d.bw) : calcNorm(torLnm, d.bw);
   const keLSI = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
   const wks = toNum(d.patient.weeksPostOp);
@@ -1265,13 +1386,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(0);
   const [data, setData] = useState({
     patient: { date: "", surgeon: "", graftType: "", weeksPostOp: "", involvedSide: "Left" },
-    bw: "", tibR: "", tibL: "", limbLenR: "", limbLenL: "",
+    bw: "", tibLen: "", limbLen: "",
     flexR: "", flexL: "", extR: "", extL: "",
     girth: { r5: "", r10: "", r15: "", l5: "", l10: "", l15: "" },
     keR: "", keL: "", forceR: "", forceL: "",
     valdSquat: {}, valdCMJ: {}, valdSLDJ: {},
     yBalance: { rAnt: "", rPM: "", rPL: "", lAnt: "", lPM: "", lPL: "" },
-    hops: { singleI: "", singleU: "", tripleI: "", tripleU: "", crossI: "", crossU: "", timedI: "", timedU: "" },
+    hops: {
+      singleI: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
+      singleU: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
+      tripleI: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
+      tripleU: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
+      crossI:  [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
+      crossU:  [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
+      timedI:  [{sec:""},{sec:""},{sec:""}],
+      timedU:  [{sec:""},{sec:""},{sec:""}],
+    },
     agilityTime: "",
     noteText: "", copied: false,
   });
