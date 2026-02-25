@@ -37,23 +37,6 @@ const calcNorm = (nm, bwLbs) => {
   return (toNum(nm) / (toNum(bwLbs) * 0.453592)).toFixed(2);
 };
 
-// Hop helpers — convert ft+in to total inches, average 3 trials
-const feetInToIn = (ft, inch) => {
-  const f = toNum(ft), i = toNum(inch);
-  if (f === 0 && i === 0) return null;
-  return f * 12 + i;
-};
-const avgTrials = (trials) => {
-  const vals = trials.map(t => feetInToIn(t.ft, t.in)).filter(v => v !== null && v > 0);
-  if (vals.length === 0) return null;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
-};
-const avgTimedTrials = (trials) => {
-  const vals = trials.map(t => toNum(t.sec)).filter(v => v > 0);
-  if (vals.length === 0) return null;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
-};
-
 // Y-Balance: composite = (ant + pm + pl) / (limbLen * 3) * 100
 // Each direction pct = reach / limbLen * 100
 const calcYBalance = (ant, pm, pl, limbLen) => {
@@ -109,16 +92,29 @@ const calcBox = {
 };
 
 // ─── SHARED UI ────────────────────────────────────────────────────────────────
-function Card({ title, accent, children, id }) {
+function Card({ title, accent, children, id, focusable, activeCard, setActiveCard }) {
+  const isActive = focusable ? activeCard === id : false;
+  const handleClick = focusable && setActiveCard ? () => setActiveCard(id) : undefined;
   return (
     <div id={id} style={{
-      background: CARD, border: `1px solid ${accent ? LIME + "44" : BORDER}`,
+      background: CARD,
+      border: `1px solid ${accent ? LIME + "44" : isActive ? LIME + "66" : BORDER}`,
       borderRadius: 12, marginBottom: 20, overflow: "hidden",
-      boxShadow: accent ? `0 0 24px ${LIME}18` : "0 2px 12px rgba(0,0,0,0.4)"
+      boxShadow: accent ? `0 0 24px ${LIME}18` : isActive ? `0 0 20px ${LIME}22` : "0 2px 12px rgba(0,0,0,0.4)",
+      transition: "box-shadow 0.2s, border-color 0.2s",
     }}>
-      <div style={{ padding: "12px 20px", background: accent ? `linear-gradient(90deg,${LIME}18,transparent)` : "#161616", borderBottom: `1px solid ${accent ? LIME + "33" : BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ width: 3, height: 18, borderRadius: 2, background: accent ? LIME : "#444" }} />
-        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", color: accent ? LIME : "#888", textTransform: "uppercase" }}>{title}</span>
+      <div
+        onClick={handleClick}
+        style={{
+          padding: "12px 20px",
+          background: accent ? `linear-gradient(90deg,${LIME}18,transparent)` : isActive ? `linear-gradient(90deg,${LIME}14,transparent)` : "#161616",
+          borderBottom: `1px solid ${accent ? LIME + "33" : isActive ? LIME + "33" : BORDER}`,
+          display: "flex", alignItems: "center", gap: 10,
+          cursor: focusable ? "pointer" : "default",
+          userSelect: "none",
+        }}>
+        <div style={{ width: 3, height: 18, borderRadius: 2, background: accent ? LIME : isActive ? LIME : "#444" }} />
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", color: accent ? LIME : isActive ? LIME : "#888", textTransform: "uppercase" }}>{title}</span>
       </div>
       <div style={{ padding: 20 }}>{children}</div>
     </div>
@@ -172,9 +168,9 @@ function SideToggle({ value, onChange }) {
 }
 
 // ─── VALD CARD ────────────────────────────────────────────────────────────────
-function ValdCard({ title, id, fields, values, onChange, highlight }) {
+function ValdCard({ title, id, fields, values, onChange, highlight, focusable, activeCard, setActiveCard }) {
   return (
-    <Card title={title} id={id}>
+    <Card title={title} id={id} focusable={focusable} activeCard={activeCard} setActiveCard={setActiveCard}>
       <div style={{ fontSize: 11, color: MUTED, marginBottom: 14 }}>Enter values directly from the Vald ForceDecks report.</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
         {fields.map(f => (
@@ -241,7 +237,7 @@ function buildCompareParagraph(rows, inv, wks, graft) {
     const v = parseFloat(keLSIRow.cur);
     if (v >= 90) parts.push(`Knee extension LSI of ${keLSIRow.cur}% meets the 90% return-to-sport threshold.`);
     else if (v >= 80) parts.push(`Knee extension LSI of ${keLSIRow.cur}% is approaching but has not yet reached the 90% return-to-sport threshold.`);
-    else parts.push(`Knee extension LSI of ${keLSIRow.cur}% remains below the 90% threshold, indicating continued quadriceps strength deficiency on the involved side.`);
+    else parts.push(`Knee extension LSI of ${keLSIRow.cur}% remains below the 80% threshold, indicating continued quadriceps strength deficiency on the involved side.`);
   }
 
   const hopRows = rows.filter(r => r.label.includes("Hop LSI") && r.cur);
@@ -274,22 +270,18 @@ function buildNote(d) {
   const gPct = gBig > 0 ? (((gBig - gSmall) / gBig) * 100).toFixed(1) : null;
   const gSide = gR < gL ? "Right deficit" : gL < gR ? "Left deficit" : "Equal";
 
-  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
-  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
+  const torRnm = calcTorqueNm(d.forceR, d.tib);
+  const torLnm = calcTorqueNm(d.forceL, d.tib);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
 
-  const hopAvgSI = avgTrials(d.hops.singleI), hopAvgSU = avgTrials(d.hops.singleU);
-  const hopAvgTI = avgTrials(d.hops.tripleI), hopAvgTU = avgTrials(d.hops.tripleU);
-  const hopAvgCI = avgTrials(d.hops.crossI),  hopAvgCU = avgTrials(d.hops.crossU);
-  const hopAvgdI = avgTimedTrials(d.hops.timedI), hopAvgdU = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: hopAvgSI !== null && hopAvgSU !== null && hopAvgSU > 0 ? ((hopAvgSI/hopAvgSU)*100).toFixed(1) : null,
-    triple: hopAvgTI !== null && hopAvgTU !== null && hopAvgTU > 0 ? ((hopAvgTI/hopAvgTU)*100).toFixed(1) : null,
-    cross:  hopAvgCI !== null && hopAvgCU !== null && hopAvgCU > 0 ? ((hopAvgCI/hopAvgCU)*100).toFixed(1) : null,
-    timed:  hopAvgdI !== null && hopAvgdU !== null && hopAvgdI > 0 ? ((hopAvgdU/hopAvgdI)*100).toFixed(1) : null,
+    single: calcLSI(d.hops.singleI, d.hops.singleU),
+    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
+    cross:  calcLSI(d.hops.crossI, d.hops.crossU),
+    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
   };
 
   // Y-Balance composites
@@ -309,10 +301,10 @@ function buildNote(d) {
   addIf(hasVal(d.patient.weeksPostOp), `Weeks Post-Op: ${d.patient.weeksPostOp}`);
   add(`Involved Side: ${inv}`); br();
 
-  if (hasVal(d.bw) || hasVal(d.tibLen) || hasVal(d.limbLen)) {
+  if (hasVal(d.bw) || hasVal(d.tib) || hasVal(d.limbLen)) {
     add("BODY METRICS");
     addIf(hasVal(d.bw),      `Body Weight: ${d.bw} lbs`);
-    addIf(hasVal(d.tibLen),  `Tibial Length: ${d.tibLen} cm`);
+    addIf(hasVal(d.tib),     `Tibial Length: ${d.tib} cm`);
     addIf(hasVal(d.limbLen), `Limb Length (ASIS to MM): ${d.limbLen} cm`);
     br();
   }
@@ -391,13 +383,14 @@ function buildNote(d) {
   if (ybHas) {
     add("Y-BALANCE TEST");
     add("Benchmark: Composite score ≥ 90% of limb length. Anterior reach side difference > 4 cm is clinically significant.");
+    addIf(hasVal(d.limbLen), `Limb Length: ${d.limbLen} cm (applied both sides)`);
     if (hasVal(d.limbLen)) {
-      add(`Right Limb Length: ${d.limbLen} cm`);
+      add(`Right:`);
       addIf(hasVal(yb.rAnt), `  Anterior: ${yb.rAnt} cm (${calcYDir(yb.rAnt, d.limbLen)}% LL)`);
       addIf(hasVal(yb.rPM),  `  Posteromedial: ${yb.rPM} cm (${calcYDir(yb.rPM, d.limbLen)}% LL)`);
       addIf(hasVal(yb.rPL),  `  Posterolateral: ${yb.rPL} cm (${calcYDir(yb.rPL, d.limbLen)}% LL)`);
       addIf(ybCompR !== null, `  Composite Score: ${ybCompR}% limb length`);
-      add(`Left Limb Length: ${d.limbLen} cm`);
+      add(`Left:`);
       addIf(hasVal(yb.lAnt), `  Anterior: ${yb.lAnt} cm (${calcYDir(yb.lAnt, d.limbLen)}% LL)`);
       addIf(hasVal(yb.lPM),  `  Posteromedial: ${yb.lPM} cm (${calcYDir(yb.lPM, d.limbLen)}% LL)`);
       addIf(hasVal(yb.lPL),  `  Posterolateral: ${yb.lPL} cm (${calcYDir(yb.lPL, d.limbLen)}% LL)`);
@@ -411,20 +404,19 @@ function buildNote(d) {
   }
 
   // Hops
-  const hopNoteTests = [
-    ["Single Hop for Distance", hopAvgSI, hopAvgSU, hopLSIs.single],
-    ["Triple Hop for Distance", hopAvgTI, hopAvgTU, hopLSIs.triple],
-    ["Crossover Hop for Distance", hopAvgCI, hopAvgCU, hopLSIs.cross],
-    ["6-Meter Timed Hop", hopAvgdI, hopAvgdU, hopLSIs.timed, true],
-  ].filter(([, i, u]) => i !== null || u !== null);
+  const hopTests = [
+    ["Single Hop for Distance", d.hops.singleI, d.hops.singleU, hopLSIs.single, "cm"],
+    ["Triple Hop for Distance", d.hops.tripleI, d.hops.tripleU, hopLSIs.triple, "cm"],
+    ["Crossover Hop for Distance", d.hops.crossI, d.hops.crossU, hopLSIs.cross, "cm"],
+    ["6-Meter Timed Hop", d.hops.timedI, d.hops.timedU, hopLSIs.timed, "sec"],
+  ].filter(([, i, u]) => hasVal(i) || hasVal(u));
 
-  if (hopNoteTests.length > 0) {
+  if (hopTests.length > 0) {
     add("HOP TESTING");
-    hopNoteTests.forEach(([name, avgI, avgU, lsiVal, isTimed]) => {
+    hopTests.forEach(([name, i, u, lsiVal, unit]) => {
       add(`${name}:`);
-      const unit = isTimed ? "sec" : "in";
-      addIf(avgI !== null, `  ${inv} (Involved) avg: ${avgI.toFixed(1)} ${unit}`);
-      addIf(avgU !== null, `  ${uninv} (Uninvolved) avg: ${avgU.toFixed(1)} ${unit}`);
+      addIf(hasVal(i), `  ${inv} (Involved): ${i} ${unit}`);
+      addIf(hasVal(u), `  ${uninv} (Uninvolved): ${u} ${unit}`);
       addIf(lsiVal !== null, `  LSI: ${lsiVal}%`);
       br();
     });
@@ -447,22 +439,18 @@ function buildLetter(d, ptName, therapistName, clinic, impression) {
   const invR = inv === "Right";
   const uninv = invR ? "Left" : "Right";
 
-  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
-  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
+  const torRnm = calcTorqueNm(d.forceR, d.tib);
+  const torLnm = calcTorqueNm(d.forceL, d.tib);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI  = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI   = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
   const normInv = invR ? normR : normL;
-  const hopAvgSIl = avgTrials(d.hops.singleI), hopAvgSUl = avgTrials(d.hops.singleU);
-  const hopAvgTIl = avgTrials(d.hops.tripleI), hopAvgTUl = avgTrials(d.hops.tripleU);
-  const hopAvgCIl = avgTrials(d.hops.crossI),  hopAvgCUl = avgTrials(d.hops.crossU);
-  const hopAvgdIl = avgTimedTrials(d.hops.timedI), hopAvgdUl = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: hopAvgSIl !== null && hopAvgSUl !== null && hopAvgSUl > 0 ? ((hopAvgSIl/hopAvgSUl)*100).toFixed(1) : null,
-    triple: hopAvgTIl !== null && hopAvgTUl !== null && hopAvgTUl > 0 ? ((hopAvgTIl/hopAvgTUl)*100).toFixed(1) : null,
-    cross:  hopAvgCIl !== null && hopAvgCUl !== null && hopAvgCUl > 0 ? ((hopAvgCIl/hopAvgCUl)*100).toFixed(1) : null,
-    timed:  hopAvgdIl !== null && hopAvgdUl !== null && hopAvgdIl > 0 ? ((hopAvgdUl/hopAvgdIl)*100).toFixed(1) : null,
+    single: calcLSI(d.hops.singleI, d.hops.singleU),
+    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
+    cross:  calcLSI(d.hops.crossI, d.hops.crossU),
+    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
   };
 
   const today = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
@@ -603,31 +591,28 @@ function Tab1({ data: d, setData: setD }) {
   const sd = (k, v) => setD(p => ({ ...p, [k]: v }));
   const setP = (k, v) => sd("patient", { ...d.patient, [k]: v });
   const inv = d.patient.involvedSide, invR = inv === "Right", uninv = invR ? "Left" : "Right";
+  const [activeCard, setActiveCard] = useState("patient");
 
   const gTotR = () => [d.girth.r5, d.girth.r10, d.girth.r15].reduce((a, v) => a + toNum(v), 0);
   const gTotL = () => [d.girth.l5, d.girth.l10, d.girth.l15].reduce((a, v) => a + toNum(v), 0);
   const gPct = () => { const b = Math.max(gTotR(), gTotL()), s = Math.min(gTotR(), gTotL()); return b > 0 ? (((b - s) / b) * 100).toFixed(1) : null; };
   const gSide = () => { const r = gTotR(), l = gTotL(); return r < l ? "Right deficit" : l < r ? "Left deficit" : "Equal"; };
 
-  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
-  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
+  const torRnm = calcTorqueNm(d.forceR, d.tib);
+  const torLnm = calcTorqueNm(d.forceL, d.tib);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI  = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
 
-  const hopAvgSI = avgTrials(d.hops.singleI), hopAvgSU = avgTrials(d.hops.singleU);
-  const hopAvgTI = avgTrials(d.hops.tripleI), hopAvgTU = avgTrials(d.hops.tripleU);
-  const hopAvgCI = avgTrials(d.hops.crossI),  hopAvgCU = avgTrials(d.hops.crossU);
-  const hopAvgdI = avgTimedTrials(d.hops.timedI), hopAvgdU = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: hopAvgSI !== null && hopAvgSU !== null && hopAvgSU > 0 ? ((hopAvgSI/hopAvgSU)*100).toFixed(1) : null,
-    triple: hopAvgTI !== null && hopAvgTU !== null && hopAvgTU > 0 ? ((hopAvgTI/hopAvgTU)*100).toFixed(1) : null,
-    cross:  hopAvgCI !== null && hopAvgCU !== null && hopAvgCU > 0 ? ((hopAvgCI/hopAvgCU)*100).toFixed(1) : null,
-    timed:  hopAvgdI !== null && hopAvgdU !== null && hopAvgdI > 0 ? ((hopAvgdU/hopAvgdI)*100).toFixed(1) : null,
+    single: calcLSI(d.hops.singleI, d.hops.singleU),
+    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
+    cross:  calcLSI(d.hops.crossI,  d.hops.crossU),
+    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
   };
 
-  // Y-Balance calculations
+  // Y-Balance calculations — single limbLen used for both sides
   const yb = d.yBalance || {};
   const setYB = (k, v) => sd("yBalance", { ...yb, [k]: v });
   const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
@@ -696,7 +681,7 @@ function Tab1({ data: d, setData: setD }) {
   return (
     <div>
       {/* Patient — no age field */}
-      <Card title="Patient Information" accent>
+      <Card title="Patient Information" accent id="patient" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <R3>
           <Field label="Date of Testing" type="text" value={d.patient.date} onChange={v => setP("date", v)} placeholder="MM/DD/YYYY" step={null} />
           <Field label="Weeks Post-Op" unit="wks" value={d.patient.weeksPostOp} onChange={v => setP("weeksPostOp", v)} step="1" />
@@ -708,18 +693,18 @@ function Tab1({ data: d, setData: setD }) {
         </R2>
       </Card>
 
-      {/* Body Metrics — now includes limb length */}
-      <Card title="Body Metrics">
+      {/* Body Metrics */}
+      <Card title="Body Metrics" id="bodymetrics" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <R3>
           <Field label="Body Weight" unit="lbs" value={d.bw} onChange={v => sd("bw", v)} />
-          <Field label="Tibial Length" unit="cm" value={d.tibLen} onChange={v => sd("tibLen", v)} placeholder="joint line to HHD pad" />
+          <Field label="Tibial Length" unit="cm" value={d.tib} onChange={v => sd("tib", v)} placeholder="joint line to HHD pad" />
           <Field label="Limb Length" unit="cm" value={d.limbLen} onChange={v => sd("limbLen", v)} placeholder="ASIS to medial malleolus" />
         </R3>
-        <div style={{ fontSize: 11, color: MUTED }}>Tibial length = lateral joint line to HHD pad (for torque). Limb length = ASIS to medial malleolus (for Y-Balance). One measurement used for both sides.</div>
+        <div style={{ fontSize: 11, color: MUTED }}>Tibial length used for torque calculation (both sides). Limb length used for Y-Balance composite (both sides).</div>
       </Card>
 
       {/* ROM */}
-      <Card title="Knee Range of Motion">
+      <Card title="Knee Range of Motion" id="rom" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
           <Field label="Flexion Right" unit="°" value={d.flexR} onChange={v => sd("flexR", v)} />
           <Field label="Flexion Left"  unit="°" value={d.flexL} onChange={v => sd("flexL", v)} />
@@ -733,7 +718,7 @@ function Tab1({ data: d, setData: setD }) {
       </Card>
 
       {/* Girth */}
-      <Card title="Quad Girth Measurements">
+      <Card title="Quad Girth Measurements" id="girth" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <div style={{ fontSize: 11, color: MUTED, marginBottom: 12 }}>Circumference at 5, 10, 15 cm proximal to superior patella border (cm)</div>
         <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr 1fr 90px", gap: 8, marginBottom: 8 }}>
           <div />{["5 cm","10 cm","15 cm","Total"].map(h => <div key={h} style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", textAlign: "center" }}>{h}</div>)}
@@ -758,7 +743,7 @@ function Tab1({ data: d, setData: setD }) {
       </Card>
 
       {/* KE Strength */}
-      <Card title="Knee Extension Strength">
+      <Card title="Knee Extension Strength" id="ke" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <div style={{ fontSize: 11, color: MUTED, marginBottom: 12 }}>Force values automatically populate HHD inputs in the torque section below.</div>
         <R2>
           <Field label="Right" unit="lbs" value={d.keR} onChange={v => { sd("keR", v); sd("forceR", v); }} />
@@ -771,9 +756,10 @@ function Tab1({ data: d, setData: setD }) {
       </Card>
 
       {/* Torque */}
-      <Card title="Isometric Quad Torque — 90° Knee Flexion (HHD)">
+      <Card title="Isometric Quad Torque — 90° Knee Flexion (HHD)" id="torque" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <div style={{ fontSize: 11, color: MUTED, marginBottom: 12, lineHeight: 1.6 }}>
           Force carried from KE Strength above. Torque (Nm) = Force(lbs) × 4.448 × Tibial Length(m). Normalized = Nm / BW(kg).
+          {hasVal(d.tib) && <span style={{ color: LIME, marginLeft: 6 }}>Tibial length: {d.tib} cm</span>}
         </div>
         <R2>
           <Field label="HHD Force — Right (lbs)" value={d.forceR} onChange={v => sd("forceR", v)} placeholder="auto from KE" />
@@ -794,6 +780,7 @@ function Tab1({ data: d, setData: setD }) {
       <ValdCard title="Squat Symmetry — Vald ForceDecks" id="ValdSquat"
         fields={valdSquatFields} values={d.valdSquat || {}}
         onChange={(k, v) => setVald("valdSquat", k, v)}
+        focusable activeCard={activeCard} setActiveCard={setActiveCard}
         highlight={(vals) => vals.lsiPct && (
           <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 16 }}>
             <div>
@@ -808,6 +795,7 @@ function Tab1({ data: d, setData: setD }) {
       <ValdCard title="Countermovement Jump — Vald ForceDecks" id="ValdCMJ"
         fields={valdCMJFields} values={d.valdCMJ || {}}
         onChange={(k, v) => setVald("valdCMJ", k, v)}
+        focusable activeCard={activeCard} setActiveCard={setActiveCard}
         highlight={(vals) => vals.modRSI && (
           <div style={{ marginTop: 12 }}>
             <div style={{ ...lbl, marginBottom: 3 }}>Modified RSI</div>
@@ -819,6 +807,7 @@ function Tab1({ data: d, setData: setD }) {
       <ValdCard title="Single Leg Drop Jump — Vald ForceDecks" id="ValdSLDJ"
         fields={valdSLDJFields} values={d.valdSLDJ || {}}
         onChange={(k, v) => setVald("valdSLDJ", k, v)}
+        focusable activeCard={activeCard} setActiveCard={setActiveCard}
         highlight={(vals) => (vals.invRSI || vals.uninvRSI) && (
           <div style={{ marginTop: 12, display: "flex", gap: 24 }}>
             {vals.invRSI && <div><div style={{ ...lbl, marginBottom: 3 }}>RSI {inv}</div><div style={{ fontSize: 22, fontWeight: 800, fontFamily: "monospace", color: lsiColor(parseFloat(vals.invRSI) >= parseFloat(vals.uninvRSI || 0) ? "90" : "70") }}>{vals.invRSI}</div></div>}
@@ -827,9 +816,10 @@ function Tab1({ data: d, setData: setD }) {
         )} />
 
       {/* Y-Balance */}
-      <Card title="Y-Balance Test" id="YBalance">
+      <Card title="Y-Balance Test" id="YBalance" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <div style={{ fontSize: 11, color: MUTED, marginBottom: 14, lineHeight: 1.7 }}>
-          Composite score = (Anterior + Posteromedial + Posterolateral) ÷ (Limb Length × 3) × 100. Benchmark: ≥90% composite. Anterior side difference &gt;4 cm is a meaningful asymmetry flag. Limb length carried from Body Metrics above.
+          Composite score = (Anterior + Posteromedial + Posterolateral) ÷ (Limb Length × 3) × 100. Benchmark: ≥90% composite. Anterior side difference &gt;4 cm is a meaningful asymmetry flag.
+          {hasVal(d.limbLen) ? <span style={{ color: LIME, marginLeft: 6 }}>Limb length: {d.limbLen} cm (applied to both sides)</span> : <span style={{ color: GOLD, marginLeft: 6 }}>Enter limb length in Body Metrics above.</span>}
         </div>
 
         {/* Column headers */}
@@ -866,25 +856,23 @@ function Tab1({ data: d, setData: setD }) {
             <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Reach as % of Limb Length</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               {[
-                ["Right", "r", d.limbLen, [yb.rAnt, yb.rPM, yb.rPL]],
-                ["Left",  "l", d.limbLen, [yb.lAnt, yb.lPM, yb.lPL]],
-              ].map(([side, k, ll, [ant, pm, pl]]) => (
-                hasVal(ll) && (
-                  <div key={k}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: WHITE, marginBottom: 6 }}>{side}</div>
-                    {[["Anterior", ant], ["Posteromedial", pm], ["Posterolateral", pl]].map(([name, val]) => {
-                      const pct = calcYDir(val, ll);
-                      return (
-                        <div key={name} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, color: MUTED }}>{name}</span>
-                          <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: pct ? yBalColor(pct) : MUTED }}>
-                            {pct ? pct + "%" : "—"}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )
+                ["Right", "r", [yb.rAnt, yb.rPM, yb.rPL]],
+                ["Left",  "l", [yb.lAnt, yb.lPM, yb.lPL]],
+              ].map(([side, k, [ant, pm, pl]]) => (
+                <div key={k}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: WHITE, marginBottom: 6 }}>{side}</div>
+                  {[["Anterior", ant], ["Posteromedial", pm], ["Posterolateral", pl]].map(([name, val]) => {
+                    const pct = calcYDir(val, d.limbLen);
+                    return (
+                      <div key={name} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, color: MUTED }}>{name}</span>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", fontWeight: 700, color: pct ? yBalColor(pct) : MUTED }}>
+                          {pct ? pct + "%" : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
               ))}
             </div>
           </div>
@@ -903,91 +891,26 @@ function Tab1({ data: d, setData: setD }) {
       </Card>
 
       {/* Hops */}
-      <Card title="Hop Testing">
-        <div style={{ fontSize: 11, color: MUTED, marginBottom: 14 }}>
-          Enter up to 3 trials per side in feet + inches. Averages are calculated automatically and used for LSI comparison (in inches).
+      <Card title="Hop Testing" id="hops" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
+        <div style={{ display: "grid", gridTemplateColumns: "150px 1fr 1fr 80px", gap: 8, marginBottom: 10 }}>
+          {["Test", `${inv} (Involved)`, `${uninv} (Uninvolved)`, "LSI"].map(h => (
+            <div key={h} style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>{h}</div>
+          ))}
         </div>
         {[
-          { name: "Single Hop", ki: "singleI", ku: "singleU", lsiVal: hopLSIs.single, avgI: hopAvgSI, avgU: hopAvgSU, timed: false },
-          { name: "Triple Hop", ki: "tripleI", ku: "tripleU", lsiVal: hopLSIs.triple, avgI: hopAvgTI, avgU: hopAvgTU, timed: false },
-          { name: "Crossover Hop", ki: "crossI", ku: "crossU", lsiVal: hopLSIs.cross, avgI: hopAvgCI, avgU: hopAvgCU, timed: false },
-          { name: "6m Timed Hop", ki: "timedI", ku: "timedU", lsiVal: hopLSIs.timed, avgI: hopAvgdI, avgU: hopAvgdU, timed: true },
-        ].map(({ name, ki, ku, lsiVal, avgI, avgU, timed }) => (
-          <div key={name} style={{ marginBottom: 18, padding: "14px 16px", background: "#111", borderRadius: 10, border: `1px solid ${BORDER}` }}>
-            {/* Test header row */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: WHITE }}>{name}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                {avgI !== null && <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textTransform: "uppercase", marginBottom: 2 }}>Avg {inv}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, fontFamily: "monospace", color: LIME }}>{avgI.toFixed(1)} {timed ? "sec" : "in"}</div>
-                </div>}
-                {avgU !== null && <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textTransform: "uppercase", marginBottom: 2 }}>Avg {uninv}</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, fontFamily: "monospace", color: WHITE }}>{avgU.toFixed(1)} {timed ? "sec" : "in"}</div>
-                </div>}
-                <div style={{ textAlign: "center", padding: "6px 14px", borderRadius: 8, background: lsiVal ? lsiColor(lsiVal) + "22" : "#0f0f0f", border: `1px solid ${lsiVal ? lsiColor(lsiVal) + "55" : BORDER}` }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textTransform: "uppercase", marginBottom: 2 }}>LSI</div>
-                  <div style={{ fontSize: 18, fontWeight: 900, fontFamily: "monospace", color: lsiColor(lsiVal) }}>{lsiVal ? lsiVal + "%" : "—"}</div>
-                </div>
-              </div>
-            </div>
-            {/* Trial inputs */}
-            <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", alignSelf: "end", paddingBottom: 6 }}>Trial</div>
-              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", textAlign: "center" }}>{inv} (Involved)</div>
-              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", textAlign: "center" }}>{uninv} (Uninvolved)</div>
-            </div>
-            {[0,1,2].map(t => (
-              <div key={t} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8, marginTop: 6, alignItems: "center" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>#{t+1}</div>
-                {timed ? (
-                  <>
-                    <input style={inp} type="number" step="0.01" placeholder="sec"
-                      value={d.hops[ki][t].sec}
-                      onChange={e => { const h = d.hops[ki].map((x,i2)=>i2===t?{...x,sec:e.target.value}:x); sd("hops",{...d.hops,[ki]:h}); }} />
-                    <input style={inp} type="number" step="0.01" placeholder="sec"
-                      value={d.hops[ku][t].sec}
-                      onChange={e => { const h = d.hops[ku].map((x,i2)=>i2===t?{...x,sec:e.target.value}:x); sd("hops",{...d.hops,[ku]:h}); }} />
-                  </>
-                ) : (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                      <input style={{...inp, textAlign:"center"}} type="number" step="1" min="0" placeholder="ft"
-                        value={d.hops[ki][t].ft}
-                        onChange={e => { const h = d.hops[ki].map((x,i2)=>i2===t?{...x,ft:e.target.value}:x); sd("hops",{...d.hops,[ki]:h}); }} />
-                      <input style={{...inp, textAlign:"center"}} type="number" step="0.25" min="0" max="11.75" placeholder="in"
-                        value={d.hops[ki][t].in}
-                        onChange={e => { const h = d.hops[ki].map((x,i2)=>i2===t?{...x,in:e.target.value}:x); sd("hops",{...d.hops,[ki]:h}); }} />
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                      <input style={{...inp, textAlign:"center"}} type="number" step="1" min="0" placeholder="ft"
-                        value={d.hops[ku][t].ft}
-                        onChange={e => { const h = d.hops[ku].map((x,i2)=>i2===t?{...x,ft:e.target.value}:x); sd("hops",{...d.hops,[ku]:h}); }} />
-                      <input style={{...inp, textAlign:"center"}} type="number" step="0.25" min="0" max="11.75" placeholder="in"
-                        value={d.hops[ku][t].in}
-                        onChange={e => { const h = d.hops[ku].map((x,i2)=>i2===t?{...x,in:e.target.value}:x); sd("hops",{...d.hops,[ku]:h}); }} />
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            {!timed && (
-              <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 8, marginTop: 4 }}>
-                <div />
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>ft</div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>in</div>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>ft</div>
-                  <div style={{ fontSize: 9, fontWeight: 700, color: MUTED, textAlign: "center" }}>in</div>
-                </div>
-              </div>
-            )}
+          ["Single Hop","cm","singleI","singleU",hopLSIs.single],
+          ["Triple Hop","cm","tripleI","tripleU",hopLSIs.triple],
+          ["Crossover Hop","cm","crossI","crossU",hopLSIs.cross],
+          ["6m Timed Hop","sec","timedI","timedU",hopLSIs.timed],
+        ].map(([name, unit, ki, ku, lsiVal]) => (
+          <div key={name} style={{ display: "grid", gridTemplateColumns: "150px 1fr 1fr 80px", gap: 8, alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#ccc" }}>{name}<br /><span style={{ fontSize: 10, color: MUTED }}>{unit}</span></div>
+            <input style={inp} type="number" step="0.1" placeholder={`— ${unit}`} value={d.hops[ki]} onChange={e => sd("hops", { ...d.hops, [ki]: e.target.value })} />
+            <input style={inp} type="number" step="0.1" placeholder={`— ${unit}`} value={d.hops[ku]} onChange={e => sd("hops", { ...d.hops, [ku]: e.target.value })} />
+            <div style={{ textAlign: "center", fontSize: 16, fontWeight: 800, fontFamily: "monospace", color: lsiColor(lsiVal) }}>{lsiVal ? lsiVal + "%" : "—"}</div>
           </div>
         ))}
-        <div style={{ marginTop: 4, padding: "10px 16px", background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, display: "flex", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ marginTop: 10, padding: "10px 16px", background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, display: "flex", gap: 20, flexWrap: "wrap" }}>
           {[["≥90% — RTS Met", LIME],["80–89% — Borderline", GOLD],["<80% — Not Met", RED_BAD]].map(([l, c]) => (
             <span key={l} style={{ fontSize: 11, fontWeight: 700, color: c }}>■ {l}</span>
           ))}
@@ -995,7 +918,7 @@ function Tab1({ data: d, setData: setD }) {
       </Card>
 
       {/* Agility */}
-      <Card title="Pro Agility Test (5-10-5)">
+      <Card title="Pro Agility Test (5-10-5)" id="agility" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
         <div style={{ fontSize: 11, color: MUTED, marginBottom: 14 }}>Sprints 5 yards, 10 yards, 5 yards. Record best time. Lower is better.</div>
         <R3>
           <div>
@@ -1050,35 +973,31 @@ function Tab2({ currentData: d }) {
     const result = {};
     text.split("\n").map(l => l.trim()).filter(Boolean).forEach(line => {
       const m = line.match(/^([^:]+):\s*(.+)$/);
-      if (m) result[m[1].trim().toLowerCase()] = m[2].trim();
+      if (m) result[m[1].trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")] = m[2].trim();
     });
     return result;
   };
 
   const invR = d.patient.involvedSide === "Right";
   const inv = d.patient.involvedSide, uninv = invR ? "Left" : "Right";
-  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
-  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
+  const torRnm = calcTorqueNm(d.forceR, d.tib);
+  const torLnm = calcTorqueNm(d.forceL, d.tib);
   const normR = calcNorm(torRnm, d.bw);
   const normL = calcNorm(torLnm, d.bw);
   const torLSI  = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
   const keLSI   = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
-  const hopAvgSI2 = avgTrials(d.hops.singleI), hopAvgSU2 = avgTrials(d.hops.singleU);
-  const hopAvgTI2 = avgTrials(d.hops.tripleI), hopAvgTU2 = avgTrials(d.hops.tripleU);
-  const hopAvgCI2 = avgTrials(d.hops.crossI),  hopAvgCU2 = avgTrials(d.hops.crossU);
-  const hopAvgdI2 = avgTimedTrials(d.hops.timedI), hopAvgdU2 = avgTimedTrials(d.hops.timedU);
   const hopLSIs = {
-    single: hopAvgSI2 !== null && hopAvgSU2 !== null && hopAvgSU2 > 0 ? ((hopAvgSI2/hopAvgSU2)*100).toFixed(1) : null,
-    triple: hopAvgTI2 !== null && hopAvgTU2 !== null && hopAvgTU2 > 0 ? ((hopAvgTI2/hopAvgTU2)*100).toFixed(1) : null,
-    cross:  hopAvgCI2 !== null && hopAvgCU2 !== null && hopAvgCU2 > 0 ? ((hopAvgCI2/hopAvgCU2)*100).toFixed(1) : null,
-    timed:  hopAvgdI2 !== null && hopAvgdU2 !== null && hopAvgdI2 > 0 ? ((hopAvgdU2/hopAvgdI2)*100).toFixed(1) : null,
+    single: calcLSI(d.hops.singleI, d.hops.singleU),
+    triple: calcLSI(d.hops.tripleI, d.hops.tripleU),
+    cross:  calcLSI(d.hops.crossI, d.hops.crossU),
+    timed:  calcTimedLSI(d.hops.timedI, d.hops.timedU),
   };
   const yb = d.yBalance || {};
   const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
   const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
 
   const rows = [
-    { label: "Weeks Post-Op",           cur: d.patient.weeksPostOp,   u: " wks", h: true },
+    { label: "Weeks Post-Op",           key: "weeks_postop",         cur: d.patient.weeksPostOp,   u: " wks", h: true },
     { label: `Flex ${inv} (°)`,         key: `knee_flexion_${inv.toLowerCase()}`,   cur: invR ? d.flexR : d.flexL, u: "°", h: true },
     { label: `Flex ${uninv} (°)`,       key: `knee_flexion_${uninv.toLowerCase()}`, cur: invR ? d.flexL : d.flexR, u: "°", h: true },
     { label: `Ext ${inv} (°)`,          key: `knee_extension_${inv.toLowerCase()}`, cur: invR ? d.extR : d.extL,   u: "°", h: null },
@@ -1098,41 +1017,10 @@ function Tab2({ currentData: d }) {
     { label: "Pro Agility (sec)",       key: "best_time",            cur: d.agilityTime,  u: " sec", h: false },
   ];
 
-  // Map each row to the exact label text written by buildNote
-  const parseKeyMap = {
-    "Weeks Post-Op": ["weeks post-op"],
-    [`Flex ${inv} (°)`]: [`knee flexion - ${inv.toLowerCase()}`],
-    [`Flex ${uninv} (°)`]: [`knee flexion - ${uninv.toLowerCase()}`],
-    [`Ext ${inv} (°)`]: [`knee extension - ${inv.toLowerCase()}`],
-    "Girth Asymmetry (%)": ["girth asymmetry"],
-    [`KE Strength ${inv} (lbs)`]: [`ke strength ${inv.toLowerCase()}`, `${inv.toLowerCase()}`],
-    "KE LSI (%)": ["limb symmetry index"],
-    "Quadriceps Index (%)": ["quadriceps index"],
-    "Squat LSI (%)": ["lsi"],
-    "CMJ Jump Height (cm)": ["jump height (impulse-derived)"],
-    [`SLDJ RSI ${inv}`]: [`rsi - ${inv.toLowerCase()}`],
-    "Y-Balance Composite Right (%)": ["composite score", "right composite"],
-    "Y-Balance Composite Left (%)": ["composite score", "left composite"],
-    "Single Hop LSI (%)": ["single hop for distance", "single hop lsi"],
-    "Triple Hop LSI (%)": ["triple hop for distance", "triple hop lsi"],
-    "Crossover Hop LSI (%)": ["crossover hop for distance", "crossover hop lsi"],
-    "6m Timed Hop LSI (%)": ["6-meter timed hop", "6m timed hop lsi"],
-    "Pro Agility (sec)": ["best time", "pro agility"],
-  };
-
   const getOld = (row) => {
     if (!parsed) return null;
-    const searchKeys = parseKeyMap[row.label] || [row.label.toLowerCase()];
-    for (const [k, v] of Object.entries(parsed)) {
-      const kl = k.toLowerCase();
-      for (const sk of searchKeys) {
-        if (kl.includes(sk)) {
-          // extract the numeric part — look for a number in the value
-          const match = v.match(/(\d+\.?\d*)/);
-          if (match) return match[1];
-          return v;
-        }
-      }
+    for (const v of [row.key, row.key.replace(/_/g,""), row.label.toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_]/g,"")]) {
+      if (parsed[v] !== undefined) { const n = parseFloat(parsed[v]); return isNaN(n) ? parsed[v] : n.toString(); }
     }
     return null;
   };
@@ -1215,110 +1103,683 @@ function Tab2({ currentData: d }) {
 
 // ─── TAB 3: PROGRESSION CRITERIA ─────────────────────────────────────────────
 function Tab3({ currentData: d }) {
+  const [activeSection, setActiveSection] = useState(0);
+  // clinician attestation: { "sectionIndex:criteriaKey": true/false }
+  const [attested, setAttested] = useState({});
+  const toggleAttest = (key) => setAttested(prev => ({ ...prev, [key]: !prev[key] }));
+  const getAttest = (key) => attested[key] === true ? true : null;
+
   const invR = d.patient.involvedSide === "Right";
-  const torRnm = calcTorqueNm(d.forceR, d.tibLen);
-  const torLnm = calcTorqueNm(d.forceL, d.tibLen);
-  const normInv = invR ? calcNorm(torRnm, d.bw) : calcNorm(torLnm, d.bw);
-  const keLSI = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
-  const wks = toNum(d.patient.weeksPostOp);
+  const inv  = d.patient.involvedSide;
+  const torRnm   = calcTorqueNm(d.forceR, d.tib);
+  const torLnm   = calcTorqueNm(d.forceL, d.tib);
+  const normInv  = invR ? calcNorm(torRnm, d.bw) : calcNorm(torLnm, d.bw);
+  const keLSI    = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
+  const wks      = toNum(d.patient.weeksPostOp);
+  const mos      = wks / 4.33;
+  const hopSingle = calcLSI(d.hops.singleI, d.hops.singleU);
+  const hopTriple = calcLSI(d.hops.tripleI, d.hops.tripleU);
+  const hopCross  = calcLSI(d.hops.crossI, d.hops.crossU);
+  const hopTimed  = calcTimedLSI(d.hops.timedI, d.hops.timedU);
+  const yb        = d.yBalance || {};
+  const ybInv     = invR ? calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen) : calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
 
-  const met70  = (v) => v !== null ? parseFloat(v) >= 70  : null;
-  const met80  = (v) => v !== null ? parseFloat(v) >= 80  : null;
-  const metNm  = (v) => v !== null ? parseFloat(v) >= 1.5 : null;
-  const metWks = (n) => wks > 0 ? wks >= n : null;
-
-  const phases = [
-    { label: "Return to Running", timeRange: "Weeks 10–14", color: BLUE, logic: "or",
-      criteria: [
-        { text: "KE LSI ≥ 70%", detail: keLSI !== null ? `Current: ${keLSI}%` : "KE strength not entered", met: met70(keLSI) },
-        { text: "OR Normalized torque ≥ 1.5 Nm/kg", detail: normInv !== null ? `Current: ${normInv} Nm/kg` : "Requires BW + tibial length + force", met: metNm(normInv), isOr: true },
-      ]},
-    { label: "Phase 1 Plyometrics", timeRange: "Weeks 10–14", color: LIME,
-      criteria: [
-        { text: "KE LSI ≥ 70%", detail: keLSI !== null ? `Current: ${keLSI}%` : "KE strength not entered", met: met70(keLSI) },
-        { text: "Weeks post-op ≥ 10", detail: wks > 0 ? `Current: ${wks} weeks` : "Weeks not entered", met: metWks(10) },
-      ]},
-    { label: "Phase 2 Plyometrics", timeRange: "Weeks 15–18", color: GOLD,
-      criteria: [
-        { text: "KE LSI ≥ 80%", detail: keLSI !== null ? `Current: ${keLSI}%` : "KE strength not entered", met: met80(keLSI) },
-        { text: "Weeks post-op ≥ 15", detail: wks > 0 ? `Current: ${wks} weeks` : "Weeks not entered", met: metWks(15) },
-      ]},
-    { label: "Phase 3 Plyometrics", timeRange: "Weeks 19–22", color: "#f97316",
-      criteria: [
-        { text: "All Phase 2 criteria met", detail: "LSI ≥ 80% and ≥ 15 weeks", met: (() => { const a=met80(keLSI), b=metWks(15); return a===null||b===null?null:a&&b; })() },
-        { text: "Weeks post-op ≥ 19", detail: wks > 0 ? `Current: ${wks} weeks` : "Weeks not entered", met: metWks(19) },
-      ]},
-    { label: "Phase 4 Plyometrics", timeRange: "Weeks 23–29", color: RED_BAD,
-      criteria: [
-        { text: "All Phase 3 criteria met", detail: "Phase 2 criteria + ≥ 19 weeks", met: (() => { const a=met80(keLSI), b=metWks(19); return a===null||b===null?null:a&&b; })() },
-        { text: "Weeks post-op ≥ 23", detail: wks > 0 ? `Current: ${wks} weeks` : "Weeks not entered", met: metWks(23) },
-      ]},
-  ];
-
-  const phaseStatus = (ph) => {
-    if (ph.logic === "or") {
-      const vals = ph.criteria.map(c => c.met);
-      if (vals.every(v => v === null)) return null;
-      if (vals.some(v => v === true)) return true;
-      return false;
-    }
-    if (ph.criteria.every(c => c.met === null)) return null;
-    return ph.criteria.every(c => c.met === true);
+  // ── helper predicates ──
+  const m = (v, thresh) => v !== null ? parseFloat(v) >= thresh : null;
+  const mWks = (n) => wks > 0 ? wks >= n : null;
+  const mMos = (n) => wks > 0 ? mos >= n : null;
+  const and  = (...vals) => { if (vals.some(v => v === null)) return null; return vals.every(Boolean); };
+  const or   = (...vals) => { if (vals.every(v => v === null)) return null; return vals.some(v => v === true) || null === vals.find(v => v === false && vals.every(v2 => v2 !== true)) ? vals.some(v => v === true) ? true : null : false; };
+  const hopMet80 = () => {
+    const vals = [hopSingle, hopTriple, hopCross, hopTimed].filter(v => v !== null);
+    if (vals.length === 0) return null;
+    return vals.some(v => parseFloat(v) >= 80);
+  };
+  const hopAllMet = (thresh) => {
+    const vals = [hopSingle, hopTriple, hopCross, hopTimed].filter(v => v !== null);
+    if (vals.length === 0) return null;
+    return vals.every(v => parseFloat(v) >= thresh);
   };
 
-  const Icon = ({ met }) => (
-    <span style={{ fontSize: 20, color: met === null ? MUTED : met ? LIME : RED_BAD, flexShrink: 0 }}>
+  const keLSIdisp   = keLSI   !== null ? `Current: ${keLSI}%`   : "KE strength not entered (Testing tab)";
+  const normDisp     = normInv !== null ? `Current: ${normInv} Nm/kg` : "Requires BW + tibial length + force";
+  const wksDisp      = wks > 0         ? `Current: ${wks} weeks (${mos.toFixed(1)} months)` : "Weeks post-op not entered (Testing tab)";
+  const hopDisp      = hopMet80() !== null ? `Hop data entered` : "Hop test data not entered (Testing tab)";
+  const ybDisp       = ybInv !== null ? `Current: ${ybInv}%` : "Y-Balance data not entered (Testing tab)";
+  const singleLegLPdisp = "Assess via functional testing";
+
+  // ─── MILESTONE GROUPS ────────────────────────────────────────────────────────
+  const sections = [
+    // ── 0: Phase 1 → Phase 2 ──────────────────────────────────────────────────
+    {
+      label: "Phase 1 → Phase 2",
+      sublabel: "Recovery → Strength (Week 2+)",
+      color: "#38bdf8",
+      emoji: "🦵",
+      description: "Goals to advance from Phase 1 (Recovery from Surgery) to Phase 2 (Strength & Neuromuscular Control). All criteria must be met.",
+      groups: [
+        {
+          title: "Range of Motion",
+          criteria: [
+            { text: "Full knee extension (symmetrical, including hyperextension)", detail: "Assess clinically — not auto-calculated", met: null, clinical: true },
+            { text: "90° knee flexion by week 2", detail: wksDisp, met: mWks(2) },
+          ],
+        },
+        {
+          title: "Strength / Neuromuscular",
+          criteria: [
+            { text: "Quadriceps lag test passed (maintain full active extension)", detail: "Seated at table edge — clinician sets extension, patient holds", met: null, clinical: true },
+            { text: "Minimize arthrogenic muscle inhibition", detail: "Clinical assessment", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Function & Ambulation",
+          criteria: [
+            { text: "Independent ambulation without crutches", detail: "Target: off crutches by week 2", met: mWks(2) },
+            { text: "Decreased swelling", detail: "Clinical assessment", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "Weeks post-op ≥ 2", detail: wksDisp, met: mWks(2) },
+          ],
+        },
+      ],
+    },
+
+    // ── 1: Phase 2 → Phase 3 ──────────────────────────────────────────────────
+    {
+      label: "Phase 2 → Phase 3",
+      sublabel: "Strength → Landings/Running (Week 12+)",
+      color: LIME,
+      emoji: "💪",
+      description: "Goals to advance from Phase 2 (Strength & Neuromuscular Control) to Phase 3 (Landings, Running, Agility). All criteria must be met.",
+      groups: [
+        {
+          title: "Range of Motion",
+          criteria: [
+            { text: "Symmetrical full knee extension (including hyperextension)", detail: "Clinical measurement", met: null, clinical: true },
+            { text: "120° knee flexion by week 6", detail: wksDisp, met: mWks(6) },
+            { text: "Full knee flexion ROM", detail: "Target achieved by end of Phase 2", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Balance",
+          criteria: [
+            { text: "Single leg stance ≥ 43 sec eyes open", detail: "Timed clinical test", met: null, clinical: true },
+            { text: "Single leg stance ≥ 9 sec eyes closed", detail: "Timed clinical test", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Strength",
+          criteria: [
+            { text: "Single leg calf raise — full ROM, 0-2-0-2 tempo × 85% of unaffected side", detail: "Criteria: 85% repetition symmetry", met: null, clinical: true },
+            { text: "Single leg leg press 1RM ≥ 1.5× bodyweight at 90° knee flexion", detail: "Clinical testing", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Function",
+          criteria: [
+            { text: "Functional alignment test: stand on 20 cm box, squat to 60°, 0-2-0-2 tempo × 5 reps", detail: "Positive shin angle required", met: null, clinical: true },
+            { text: "Single leg rise test: sit at 90° knee flexion, arms crossed, stand & sit × 85% of unaffected or 10 reps", detail: "Clinical testing", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "Weeks post-op ≥ 12", detail: wksDisp, met: mWks(12) },
+          ],
+        },
+      ],
+    },
+
+    // ── 2: Begin Running ──────────────────────────────────────────────────────
+    {
+      label: "Begin Running",
+      sublabel: "Week 14 + hop testing (TRM Protocol)",
+      color: "#a78bfa",
+      emoji: "🏃",
+      description: "Criteria to initiate the running program (Level 1 treadmill/track protocol). Both time AND functional criteria must be met.",
+      groups: [
+        {
+          title: "Strength (OR logic — either criterion clears)",
+          logic: "or",
+          criteria: [
+            { text: "KE LSI ≥ 70%", detail: keLSIdisp, met: m(keLSI, 70), isOr: true },
+            { text: "OR Normalized quad torque ≥ 1.5 Nm/kg (involved)", detail: normDisp, met: m(normInv, 1.5), isOr: true },
+          ],
+        },
+        {
+          title: "Functional Hop",
+          criteria: [
+            { text: "At least one hop test ≥ 80% LSI", detail: [hopSingle, hopTriple, hopCross, hopTimed].filter(v => v !== null).length > 0 ? `Single: ${hopSingle || "—"}%, Triple: ${hopTriple || "—"}%, Cross: ${hopCross || "—"}%, Timed: ${hopTimed || "—"}%` : "Hop data not entered (Testing tab)", met: hopMet80() },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "Weeks post-op ≥ 14 (3.5 months)", detail: wksDisp, met: mWks(14) },
+          ],
+        },
+        {
+          title: "Allograft Modification",
+          criteria: [
+            { text: "⚠ Allograft only: Running delayed until 4.5 months AND hop testing ≥ 80%", detail: "Standard autograft: no additional delay. Allograft: verify graft type.", met: null, clinical: true },
+          ],
+        },
+      ],
+    },
+
+    // ── 3: Begin Plyometrics (Phase 1 Plyo) ──────────────────────────────────
+    {
+      label: "Begin Plyometrics",
+      sublabel: "Body weight jumping — Week 10–12",
+      color: GOLD,
+      emoji: "⬆️",
+      description: "Criteria to initiate Phase 1 bodyweight plyometrics (box jumps, double-leg landing progressions). Requires Phase 2 functional goals AND strength criteria.",
+      groups: [
+        {
+          title: "Prerequisite: Phase 2 Goals Met",
+          criteria: [
+            { text: "All Phase 2 → Phase 3 criteria satisfied", detail: "See Phase 2 → Phase 3 tab above", met: mWks(12) },
+          ],
+        },
+        {
+          title: "Strength",
+          criteria: [
+            { text: "KE LSI ≥ 70%", detail: keLSIdisp, met: m(keLSI, 70) },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "Weeks post-op ≥ 10", detail: wksDisp, met: mWks(10) },
+          ],
+        },
+      ],
+    },
+
+    // ── 4: Begin Sprinting & Agility ──────────────────────────────────────────
+    {
+      label: "Sprinting & Agility",
+      sublabel: "Month 4 + run 1 mile continuously",
+      color: "#f97316",
+      emoji: "⚡",
+      description: "Criteria to begin sprint work, ladder drills, shuttle runs, pivoting, and cutting progressions.",
+      groups: [
+        {
+          title: "Functional Running",
+          criteria: [
+            { text: "Can run 1 mile consecutively without pain or effusion (Running Level 5)", detail: "Complete running program Levels 1–5 first", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "≥ 4 months post-op (≥ 17.3 weeks)", detail: wksDisp, met: mWks(17) },
+          ],
+        },
+        {
+          title: "Allograft Modification",
+          criteria: [
+            { text: "⚠ Allograft only: Sprinting/agility delayed until month 5–6 AND 1 mile run completed", detail: "Standard autograft: 4 months + 1 mile. Allograft: 5–6 months + 1 mile.", met: null, clinical: true },
+          ],
+        },
+      ],
+    },
+
+    // ── 5: Phase 3 → Phase 4 (Begin Sport Practice) ───────────────────────────
+    {
+      label: "Phase 3 → Phase 4",
+      sublabel: "Agility → Return to Sport (Week 20+)",
+      color: "#f43f5e",
+      emoji: "🏅",
+      description: "Goals to advance from Phase 3 (Landings, Running, Agility) to Phase 4 (Return to Sport). All criteria must be met.",
+      groups: [
+        {
+          title: "Balance",
+          criteria: [
+            { text: "Single leg rise test: 90° squat, arms crossed × 22 reps", detail: "Must exceed Phase 2 benchmark of 85% / 10 reps", met: null, clinical: true },
+            { text: "Y-Balance composite score ≥ 95%", detail: ybDisp, met: m(ybInv, 95) },
+          ],
+        },
+        {
+          title: "Strength",
+          criteria: [
+            { text: "Single leg leg press 1RM ≥ 1.8× bodyweight at 90° knee flexion", detail: "Upgraded from 1.5× in Phase 2", met: null, clinical: true },
+            { text: "Squat 1RM ≥ 1.5–1.8× bodyweight at 90° knee flexion (athletes who lift)", detail: "For lifting athletes only", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Hop Testing (all ≥ 95% LSI or equal to pre-op)",
+          criteria: [
+            { text: "Single hop for distance ≥ 95% LSI", detail: hopSingle !== null ? `Current: ${hopSingle}%` : "Hop data not entered", met: m(hopSingle, 95) },
+            { text: "Triple hop for distance ≥ 95% LSI", detail: hopTriple !== null ? `Current: ${hopTriple}%` : "Hop data not entered", met: m(hopTriple, 95) },
+            { text: "Triple crossover hop ≥ 95% LSI", detail: hopCross !== null ? `Current: ${hopCross}%` : "Hop data not entered", met: m(hopCross, 95) },
+            { text: "Side hop (40 cm, 30 sec) ≥ 95% LSI", detail: hopTimed !== null ? `Current 6m timed: ${hopTimed}%` : "Hop data not entered", met: m(hopTimed, 95) },
+          ],
+        },
+        {
+          title: "Running",
+          criteria: [
+            { text: "Completed 1 mile run consecutively without pain or effusion", detail: "Running Level 5 milestone", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "Weeks post-op ≥ 20 (5 months)", detail: wksDisp, met: mWks(20) },
+          ],
+        },
+      ],
+    },
+
+    // ── 6: Return to Practice (Non-Contact) ───────────────────────────────────
+    {
+      label: "Return to Practice",
+      sublabel: "Non-contact — Month 6",
+      color: "#ec4899",
+      emoji: "🏋️",
+      description: "Criteria for return to non-contact sport practice. Requires Phase 3 goals AND timeline.",
+      groups: [
+        {
+          title: "Prerequisite",
+          criteria: [
+            { text: "All Phase 3 → Phase 4 goals met", detail: "Strength, hop, balance, and running milestones", met: and(m(hopSingle, 95), m(hopTriple, 95), m(hopCross, 95), mWks(20)) },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "≥ 6 months post-op (≥ 26 weeks)", detail: wksDisp, met: mWks(26) },
+          ],
+        },
+        {
+          title: "Restriction",
+          criteria: [
+            { text: "Non-contact only — sport specific drills with ATC/strength coach allowed", detail: "No live contact, scrimmage, or full practice", met: null, clinical: true },
+          ],
+        },
+      ],
+    },
+
+    // ── 7: Return to Contact Practice ─────────────────────────────────────────
+    {
+      label: "Return to Contact",
+      sublabel: "Full practice — Month 7",
+      color: "#dc2626",
+      emoji: "🤝",
+      description: "Criteria to return to full contact practice.",
+      groups: [
+        {
+          title: "Prerequisite",
+          criteria: [
+            { text: "Non-contact practice without pain or effusion for ≥ 1 week", detail: "Must have passed non-contact return first", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "≥ 7 months post-op (≥ 30.3 weeks)", detail: wksDisp, met: mWks(30) },
+          ],
+        },
+      ],
+    },
+
+    // ── 8: Return to Play (Full Clearance) ────────────────────────────────────
+    {
+      label: "Return to Play",
+      sublabel: "Full RTS clearance — Month 9",
+      color: LIME,
+      emoji: "🏆",
+      description: "Full return-to-sport clearance criteria. All Phase 4 goals must be met AND multidisciplinary clearance obtained. This is the final milestone.",
+      groups: [
+        {
+          title: "Strength / LSI",
+          criteria: [
+            { text: "Leg Symmetry Index > 95% (dynamometer, isokinetic, or Keiser)", detail: keLSIdisp, met: m(keLSI, 95) },
+          ],
+        },
+        {
+          title: "Hop Testing (fatigued state — 7/10 RPE after sport-specific activity)",
+          criteria: [
+            { text: "All hop tests ≥ 95% LSI in fatigued state", detail: [hopSingle, hopTriple, hopCross, hopTimed].filter(v => v !== null).length > 0 ? `Best available: Single ${hopSingle || "—"}%, Triple ${hopTriple || "—"}%, Cross ${hopCross || "—"}%` : "Hop data not entered", met: hopAllMet(95) },
+          ],
+        },
+        {
+          title: "Outcome Measures ≥ 95%",
+          criteria: [
+            { text: "IKDC Subjective Knee Form ≥ 95%", detail: "Patient-reported outcome", met: null, clinical: true },
+            { text: "Tampa Scale of Kinesiophobia (TSK-11) — acceptable fear levels", detail: "Patient-reported outcome", met: null, clinical: true },
+            { text: "ACL-Return to Sport Inventory ≥ 95%", detail: "Patient-reported outcome", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "General Fitness Testing",
+          criteria: [
+            { text: "Beep test / Agility T test / Pro agility (5-10-5) completed", detail: "See Testing tab — agility time entered", met: hasVal(d.agilityTime) ? true : null },
+            { text: "Illinois Agility Test / Timed sprint test completed", detail: "Clinical testing", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Time Gate",
+          criteria: [
+            { text: "≥ 9 months post-op (≥ 39 weeks)", detail: wksDisp, met: mWks(39) },
+          ],
+        },
+        {
+          title: "Allograft Modification",
+          criteria: [
+            { text: "⚠ Allograft only: RTS delayed until 12 months AND all functional testing ≥ 90%", detail: "Standard autograft: 9 months. Allograft: 12 months.", met: null, clinical: true },
+          ],
+        },
+        {
+          title: "Multidisciplinary Clearance Required",
+          criteria: [
+            { text: "Physical Therapist cleared", detail: "PT sign-off required", met: null, clinical: true },
+            { text: "Athletic Trainer / Coach cleared", detail: "ATC and coach sign-off required", met: null, clinical: true },
+            { text: "Surgeon cleared", detail: "Physician sign-off required", met: null, clinical: true },
+          ],
+        },
+      ],
+    },
+  ];
+
+  // ── evaluate overall status ────────────────────────────────────────────────
+  const sectionStatus = (sec) => {
+    const allCriteria = sec.groups.flatMap(g => g.criteria);
+    const vals = allCriteria.map(c => c.met);
+    if (vals.every(v => v === null)) return null;
+    if (vals.every(v => v === true || v === null)) return vals.some(v => v === true) ? "partial" : null;
+    if (vals.filter(v => v !== null).every(v => v === true)) return "data-limited";
+    return vals.some(v => v === false) ? false : null;
+  };
+
+  const groupStatus = (grp, gi) => {
+    const vals = grp.criteria.map((c, ci) => {
+      if (c.clinical) {
+        const key = `${activeSection}:${gi}:${ci}`;
+        return attested[key] === true ? true : null;
+      }
+      return c.met;
+    });
+    if (grp.logic === "or") {
+      if (vals.every(v => v === null)) return null;
+      return vals.some(v => v === true) ? true : false;
+    }
+    if (vals.every(v => v === null)) return null;
+    if (vals.filter(v => v !== null).every(v => v === true)) return vals.some(v => v === false) ? false : true;
+    return vals.some(v => v === false) ? false : null;
+  };
+
+  const Icon = ({ met, size = 18 }) => (
+    <span style={{ fontSize: size, color: met === null ? MUTED : met ? LIME : RED_BAD, flexShrink: 0, lineHeight: 1 }}>
       {met === null ? "○" : met ? "✓" : "✗"}
     </span>
   );
 
+  // ── Timeline data ───────────────────────────────────────────────────────────
+  // Each milestone: week threshold, unique color, short code label, category label
+  const timelineItems = [
+    { label: "Wk 2",   sublabel: "Phase 2",     color: "#22d3ee", wkThresh: 2  },
+    { label: "Wk 10",  sublabel: "Plyometrics",  color: "#84cc16", wkThresh: 10 },
+    { label: "Wk 12",  sublabel: "Phase 3",      color: "#a3e635", wkThresh: 12 },
+    { label: "Wk 14",  sublabel: "Running",      color: "#a78bfa", wkThresh: 14 },
+    { label: "Mo. 4",  sublabel: "Sprinting",    color: "#fb923c", wkThresh: 17 },
+    { label: "Mo. 5",  sublabel: "Phase 4",      color: "#f43f5e", wkThresh: 22 },
+    { label: "Mo. 6",  sublabel: "Practice",     color: "#e879f9", wkThresh: 26 },
+    { label: "Mo. 7",  sublabel: "Contact",      color: "#f59e0b", wkThresh: 30 },
+    { label: "Mo. 9",  sublabel: "Return to Play", color: "#b8ff57", wkThresh: 39 },
+  ];
+
+  // Section label configs — clinical abbreviations replacing emojis
+  const sectionCodes = [
+    { code: "PH2",  abbr: "Phase 1→2",   bg: "#22d3ee" },
+    { code: "PH3",  abbr: "Phase 2→3",   bg: "#84cc16" },
+    { code: "RUN",  abbr: "Running",      bg: "#a78bfa" },
+    { code: "PLY",  abbr: "Plyometrics",  bg: "#a3e635" },
+    { code: "SPR",  abbr: "Sprinting",    bg: "#fb923c" },
+    { code: "PH4",  abbr: "Phase 3→4",   bg: "#f43f5e" },
+    { code: "NCP",  abbr: "Non-Contact", bg: "#e879f9" },
+    { code: "CNT",  abbr: "Contact",      bg: "#f59e0b" },
+    { code: "RTS",  abbr: "Return Play",  bg: "#b8ff57" },
+  ];
+
+  const sec = sections[activeSection];
+  const sc  = sectionCodes[activeSection];
+
   return (
     <div>
-      <Card title="Rehabilitation Progression Criteria" accent>
-        <div style={{ fontSize: 12, color: MUTED, marginBottom: 20, lineHeight: 1.7 }}>
-          Evaluates progression readiness based on data from the Testing tab. ✓ = criteria met. ✗ = not yet met. ○ = data not entered.
+      {/* ── Timeline strip ── */}
+      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, marginBottom: 20, overflow: "hidden" }}>
+        <div style={{ padding: "12px 20px", background: "#161616", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 3, height: 18, borderRadius: 2, background: "#444" }} />
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", color: "#888", textTransform: "uppercase" }}>Recovery Timeline — TRM Protocol</span>
+          {wks > 0 && (
+            <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: LIME }}>
+              {wks} wks ({mos.toFixed(1)} mo) post-op
+            </span>
+          )}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 8, marginBottom: 24 }}>
-          {phases.map(ph => {
-            const s = phaseStatus(ph);
+        <div style={{ padding: "16px 20px" }}>
+          <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 0 }}>
+            {/* connecting track */}
+            <div style={{ position: "absolute", top: 18, left: 24, right: 24, height: 2, background: "#222", zIndex: 0 }} />
+
+            {timelineItems.map((t, i) => {
+              const passed  = wks > 0 && wks >= t.wkThresh;
+              const current = wks > 0 && wks >= t.wkThresh && (i === timelineItems.length - 1 || wks < timelineItems[i + 1].wkThresh);
+
+              return (
+                <div key={t.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", position: "relative", zIndex: 1 }}>
+                  {/* node */}
+                  <div style={{
+                    width: 36, height: 36, borderRadius: "50%",
+                    background: passed ? t.color : "#1a1a1a",
+                    border: `2px solid ${passed ? t.color : current ? t.color : "#333"}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: current ? `0 0 12px ${t.color}88` : passed ? `0 0 6px ${t.color}44` : "none",
+                    transition: "all 0.3s",
+                  }}>
+                    {passed
+                      ? <span style={{ fontSize: 15, color: i === timelineItems.length - 1 ? BLACK : "#000", fontWeight: 900 }}>✓</span>
+                      : <span style={{ fontSize: 9, fontWeight: 800, color: "#555" }}>{t.wkThresh < 17 ? `W${t.wkThresh}` : `M${Math.round(t.wkThresh / 4.33)}`}</span>
+                    }
+                  </div>
+                  {/* connecting line after node */}
+                  {i < timelineItems.length - 1 && (
+                    <div style={{
+                      position: "absolute", top: 17, left: "50%", width: "100%", height: 4,
+                      background: passed && wks >= timelineItems[i + 1].wkThresh ? `linear-gradient(90deg,${t.color},${timelineItems[i+1].color})` : passed ? `linear-gradient(90deg,${t.color},#333)` : "#1f1f1f",
+                      zIndex: -1,
+                    }} />
+                  )}
+                  {/* labels */}
+                  <div style={{ marginTop: 6, textAlign: "center" }}>
+                    <div style={{ fontSize: 9, fontWeight: 800, color: passed ? t.color : "#444", letterSpacing: "0.04em" }}>{t.label}</div>
+                    <div style={{ fontSize: 8, color: passed ? t.color + "99" : "#333", marginTop: 1, whiteSpace: "nowrap" }}>{t.sublabel}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* legend */}
+          <div style={{ marginTop: 14, display: "flex", gap: 20, flexWrap: "wrap" }}>
+            {[["● Milestone reached", LIME], ["● Not yet reached", "#333"], ["● Current zone", GOLD]].map(([l, c]) => (
+              <span key={l} style={{ fontSize: 10, fontWeight: 700, color: c }}>{l}</span>
+            ))}
+            {wks === 0 && <span style={{ fontSize: 10, color: MUTED }}>Enter weeks post-op on the Testing tab to activate timeline</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Milestone selector grid ── */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 10 }}>
+          Select Milestone to Review Criteria
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 20 }}>
+          {sections.map((s, i) => {
+            const sc2 = sectionCodes[i];
+            const timeGate = s.groups.flatMap(g => g.criteria).find(c => c.text.startsWith("Weeks") || c.text.startsWith("≥"));
+            const tStatus = timeGate?.met;
+            const isActive = activeSection === i;
             return (
-              <div key={ph.label} style={{ textAlign: "center", padding: "14px 6px", borderRadius: 10, background: s === true ? ph.color + "18" : "#111", border: `2px solid ${s === true ? ph.color : s === false ? RED_BAD + "55" : BORDER}` }}>
-                <div style={{ fontSize: 22, marginBottom: 4 }}>{s === null ? "○" : s ? "✓" : "✗"}</div>
-                <div style={{ fontSize: 9, fontWeight: 800, color: s === true ? ph.color : s === false ? RED_BAD : MUTED, textTransform: "uppercase", letterSpacing: "0.05em", lineHeight: 1.3 }}>{ph.label}</div>
-              </div>
+              <button key={i} onClick={() => setActiveSection(i)} style={{
+                padding: "0", borderRadius: 10,
+                border: `2px solid ${isActive ? sc2.bg : tStatus === true ? sc2.bg + "55" : BORDER}`,
+                background: isActive ? sc2.bg + "18" : tStatus === true ? sc2.bg + "08" : "#111",
+                cursor: "pointer", textAlign: "left", overflow: "hidden",
+              }}>
+                {/* color band top */}
+                <div style={{ height: 4, background: isActive ? sc2.bg : tStatus === true ? sc2.bg + "88" : "#222" }} />
+                <div style={{ padding: "10px 12px" }}>
+                  {/* code badge */}
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 900, letterSpacing: "0.15em",
+                      color: isActive ? BLACK : sc2.bg, background: isActive ? sc2.bg : sc2.bg + "22",
+                      padding: "2px 7px", borderRadius: 4, textTransform: "uppercase",
+                    }}>{sc2.code}</span>
+                    {tStatus === true && <span style={{ fontSize: 10, color: LIME }}>✓</span>}
+                    {tStatus === false && <span style={{ fontSize: 10, color: RED_BAD }}>✗</span>}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: isActive ? sc2.bg : WHITE, lineHeight: 1.2, marginBottom: 2 }}>{s.label}</div>
+                  <div style={{ fontSize: 9, color: MUTED }}>{s.sublabel}</div>
+                </div>
+              </button>
             );
           })}
         </div>
-        {phases.map(ph => {
-          const s = phaseStatus(ph);
-          return (
-            <div key={ph.label} style={{ marginBottom: 12, borderRadius: 10, overflow: "hidden", border: `1px solid ${s === true ? ph.color + "55" : BORDER}`, background: s === true ? ph.color + "08" : "#111" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: `1px solid ${BORDER}` }}>
-                <div>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: ph.color }}>{ph.label}</span>
-                  <span style={{ fontSize: 11, color: MUTED, marginLeft: 10 }}>{ph.timeRange}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: s === true ? LIME : s === false ? RED_BAD : MUTED }}>{s === true ? "CRITERIA MET" : s === false ? "NOT YET MET" : "DATA NEEDED"}</span>
-                  <Icon met={s} />
-                </div>
-              </div>
-              {ph.criteria.map((c, ci) => (
-                <div key={ci} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "10px 16px", borderBottom: ci < ph.criteria.length - 1 ? `1px solid ${BORDER}33` : "none" }}>
-                  <Icon met={c.met} />
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: c.isOr ? BLUE : WHITE }}>{c.text}</div>
-                    <div style={{ fontSize: 11, color: MUTED, marginTop: 2 }}>{c.detail}</div>
+      </div>
+
+      {/* ── Active section detail ── */}
+      <div style={{ background: CARD, border: `2px solid ${sc.bg}55`, borderRadius: 12, marginBottom: 20, overflow: "hidden", boxShadow: `0 0 24px ${sc.bg}18` }}>
+        {/* header */}
+        <div style={{ padding: "14px 20px", background: `linear-gradient(90deg,${sc.bg}22,transparent)`, borderBottom: `1px solid ${sc.bg}33`, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ background: sc.bg, color: BLACK, fontSize: 9, fontWeight: 900, letterSpacing: "0.15em", padding: "4px 10px", borderRadius: 6 }}>{sc.code}</div>
+          <span style={{ fontSize: 13, fontWeight: 800, color: sc.bg, letterSpacing: "0.05em" }}>{sec.label}</span>
+          <span style={{ fontSize: 11, color: MUTED }}>{sec.sublabel}</span>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ fontSize: 12, color: MUTED, marginBottom: 20, lineHeight: 1.7 }}>{sec.description}</div>
+
+          {sec.groups.map((grp, gi) => {
+            const gs = groupStatus(grp, gi);
+            return (
+              <div key={gi} style={{ marginBottom: 14, borderRadius: 10, overflow: "hidden", border: `1px solid ${gs === true ? sc.bg + "55" : gs === false ? RED_BAD + "44" : BORDER}`, background: gs === true ? sc.bg + "06" : "#111" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${BORDER}`, background: "#181818" }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: gs === true ? sc.bg : "#999", textTransform: "uppercase", letterSpacing: "0.1em" }}>{grp.title}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {grp.logic === "or" && <span style={{ fontSize: 9, fontWeight: 800, color: BLUE, background: BLUE + "22", padding: "2px 6px", borderRadius: 4 }}>OR</span>}
+                    <span style={{ fontSize: 14, color: gs === null ? MUTED : gs ? LIME : RED_BAD }}>
+                      {gs === null ? "○" : gs ? "✓" : "✗"}
+                    </span>
                   </div>
                 </div>
-              ))}
-            </div>
-          );
-        })}
-        <div style={{ padding: "12px 16px", background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: 11, color: MUTED, lineHeight: 1.6 }}>
-          These thresholds guide clinical decision-making. Time ranges are approximate. Final progression decisions should be made by the treating therapist in coordination with the surgeon.
+                {grp.criteria.map((c, ci) => {
+                  const attestKey = `${activeSection}:${gi}:${ci}`;
+                  const isChecked = attested[attestKey] === true;
+                  const effectiveMet = c.clinical ? (isChecked ? true : null) : c.met;
+                  return (
+                    <div key={ci} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", borderBottom: ci < grp.criteria.length - 1 ? `1px solid ${BORDER}22` : "none", background: isChecked ? sc.bg + "08" : "transparent" }}>
+                      {c.clinical ? (
+                        <button
+                          onClick={() => toggleAttest(attestKey)}
+                          title={isChecked ? "Click to unmark" : "Click to confirm clinically"}
+                          style={{
+                            flexShrink: 0, width: 22, height: 22, borderRadius: 6, border: `2px solid ${isChecked ? sc.bg : "#444"}`,
+                            background: isChecked ? sc.bg : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                            marginTop: 1, transition: "all 0.15s",
+                          }}>
+                          {isChecked && <span style={{ fontSize: 12, color: BLACK, fontWeight: 900, lineHeight: 1 }}>✓</span>}
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 16, color: c.met === null ? MUTED : c.met ? LIME : RED_BAD, flexShrink: 0, lineHeight: 1.4 }}>
+                          {c.met === null ? "○" : c.met ? "✓" : "✗"}
+                        </span>
+                      )}
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: c.isOr ? BLUE : effectiveMet === null ? "#ccc" : effectiveMet ? sc.bg : RED_BAD, lineHeight: 1.4 }}>{c.text}</div>
+                        <div style={{ fontSize: 11, color: MUTED, marginTop: 3, lineHeight: 1.5 }}>{c.detail}</div>
+                        {c.clinical && !isChecked && (
+                          <div style={{ fontSize: 10, color: "#555", marginTop: 4, fontStyle: "italic" }}>
+                            Clinician assessment required — check box to confirm
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          <div style={{ padding: "10px 14px", background: "#0f0f0f", borderRadius: 8, border: `1px solid ${BORDER}`, fontSize: 11, color: MUTED, lineHeight: 1.8, marginTop: 4 }}>
+            <span style={{ color: LIME, fontWeight: 700 }}>✓ Auto-confirmed</span> — calculated from Testing tab data{"  ·  "}
+            <span style={{ color: RED_BAD, fontWeight: 700 }}>✗ Not yet met</span> — data below threshold{"  ·  "}
+            <span style={{ color: MUTED }}>○ No data entered yet</span>
+            <br />
+            <span style={{ color: "#888" }}>
+              <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 4, border: "2px solid #555", background: "transparent", verticalAlign: "middle", marginRight: 5 }} />
+              Empty checkbox
+            </span> — Clinical assessment needed. Click to confirm you have assessed this criterion.{"  "}
+            <span style={{ color: sc.bg, fontWeight: 700 }}>
+              <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 4, border: `2px solid ${sc.bg}`, background: sc.bg, verticalAlign: "middle", marginRight: 5 }} />
+              Checked
+            </span> — Clinician-confirmed. Click again to unmark.
+          </div>
         </div>
-      </Card>
+      </div>
+
+      {/* ── Quick reference all milestones ── */}
+      <div style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, marginBottom: 20, overflow: "hidden" }}>
+        <div style={{ padding: "12px 20px", background: "#161616", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 3, height: 18, borderRadius: 2, background: "#444" }} />
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", color: "#888", textTransform: "uppercase" }}>All Milestones — Status Overview</span>
+        </div>
+        <div style={{ padding: 16 }}>
+          <div style={{ fontSize: 11, color: MUTED, marginBottom: 14, lineHeight: 1.6 }}>
+            Click any milestone to see its detailed criteria above. Time gates auto-evaluate when weeks post-op are entered. Clinical criteria (○) require therapist verification — they cannot be auto-confirmed from testing data alone.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+            {sections.map((s, i) => {
+              const sc2 = sectionCodes[i];
+              const allCrit = s.groups.flatMap(g => g.criteria);
+              const confirmed = allCrit.filter(c => c.met === true).length;
+              const failed    = allCrit.filter(c => c.met === false).length;
+              const total     = allCrit.length;
+              const timeGate  = allCrit.find(c => c.text.startsWith("Weeks") || c.text.startsWith("≥"));
+              const tStatus   = timeGate?.met;
+              const pct       = total > 0 ? Math.round((confirmed / total) * 100) : 0;
+
+              return (
+                <div key={i} onClick={() => setActiveSection(i)} style={{
+                  padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                  background: tStatus === true ? sc2.bg + "0c" : "#111",
+                  border: `1px solid ${activeSection === i ? sc2.bg : tStatus === true ? sc2.bg + "55" : BORDER}`,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                    <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.12em", color: sc2.bg, background: sc2.bg + "22", padding: "2px 6px", borderRadius: 4 }}>{sc2.code}</span>
+                    <span style={{ fontSize: 12, color: failed > 0 ? RED_BAD : confirmed > 0 ? LIME : MUTED, fontWeight: 700 }}>
+                      {failed > 0 ? "✗" : confirmed > 0 ? "✓" : "○"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: tStatus === true ? sc2.bg : WHITE, marginBottom: 2, lineHeight: 1.2 }}>{s.label}</div>
+                  <div style={{ fontSize: 9, color: MUTED, marginBottom: 6 }}>{s.sublabel}</div>
+                  {/* progress micro-bar */}
+                  <div style={{ height: 3, borderRadius: 2, background: "#222", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: failed > 0 ? RED_BAD : sc2.bg, borderRadius: 2, transition: "width 0.3s" }} />
+                  </div>
+                  <div style={{ fontSize: 9, color: MUTED, marginTop: 4 }}>{confirmed}/{total} data-confirmed</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1387,22 +1848,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(0);
   const [data, setData] = useState({
     patient: { date: "", surgeon: "", graftType: "", weeksPostOp: "", involvedSide: "Left" },
-    bw: "", tibLen: "", limbLen: "",
+    bw: "", tib: "", limbLen: "",
     flexR: "", flexL: "", extR: "", extL: "",
     girth: { r5: "", r10: "", r15: "", l5: "", l10: "", l15: "" },
     keR: "", keL: "", forceR: "", forceL: "",
     valdSquat: {}, valdCMJ: {}, valdSLDJ: {},
     yBalance: { rAnt: "", rPM: "", rPL: "", lAnt: "", lPM: "", lPL: "" },
-    hops: {
-      singleI: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
-      singleU: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
-      tripleI: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
-      tripleU: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
-      crossI:  [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
-      crossU:  [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
-      timedI:  [{sec:""},{sec:""},{sec:""}],
-      timedU:  [{sec:""},{sec:""},{sec:""}],
-    },
+    hops: { singleI: "", singleU: "", tripleI: "", tripleU: "", crossI: "", crossU: "", timedI: "", timedU: "" },
     agilityTime: "",
     noteText: "", copied: false,
   });
