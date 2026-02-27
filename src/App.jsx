@@ -409,11 +409,13 @@ function NewPatientModal({ open, onConfirm, onCancel }) {
 
 // ─── VALD CARD ────────────────────────────────────────────────────────────────
 function ValdCard({ title, id, fields, values, onChange, highlight, focusable, activeCard, setActiveCard }) {
+  const regularFields = fields.filter(f => f.type !== "textarea");
+  const textareaFields = fields.filter(f => f.type === "textarea");
   return (
     <Card title={title} id={id} focusable={focusable} activeCard={activeCard} setActiveCard={setActiveCard}>
       <div style={{ fontSize: 11, color: MUTED, marginBottom: 14 }}>Enter values directly from the Vald ForceDecks report.</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-        {fields.map(f => (
+        {regularFields.map(f => (
           <div key={f.key}>
             <label style={lbl}>{f.label}{f.unit ? ` (${f.unit})` : ""}</label>
             {f.type === "select" ? (
@@ -428,6 +430,17 @@ function ValdCard({ title, id, fields, values, onChange, highlight, focusable, a
           </div>
         ))}
       </div>
+      {textareaFields.map(f => (
+        <div key={f.key} style={{ marginTop: 10 }}>
+          <label style={lbl}>{f.label}</label>
+          <textarea
+            style={{ ...inp, height: 64, resize: "vertical", lineHeight: 1.6, fontSize: 12 }}
+            placeholder={f.placeholder || "Optional clinical note…"}
+            value={values[f.key] || ""}
+            onChange={e => onChange(f.key, e.target.value)}
+          />
+        </div>
+      ))}
       {highlight && highlight(values)}
     </Card>
   );
@@ -938,7 +951,7 @@ function Tab1({ data: d, setData: setD }) {
     { key: "peakConForce",   label: "Peak Concentric Force",      unit: "N" },
     { key: "copPath",        label: "COP Path Length",            unit: "mm" },
     { key: "classification", label: "Classification", type: "select", options: ["Within Normal Limits","Mild Asymmetry","Moderate Asymmetry","Significant Asymmetry"] },
-    { key: "clinicalNote",   label: "Clinical Note" },
+    { key: "clinicalNote",   label: "Clinical Note", type: "textarea", placeholder: "e.g. Asymmetry predominantly right-sided, consistent with involved limb deloading pattern…" },
   ];
   const valdCMJFields = [
     { key: "jumpHeight",        label: "Jump Height (impulse-derived)",     unit: "cm" },
@@ -948,7 +961,7 @@ function Tab1({ data: d, setData: setD }) {
     { key: "concPeakForceCov",  label: "Concentric Peak Force CoV",         unit: "%" },
     { key: "modRSI",            label: "Modified RSI",                       unit: "" },
     { key: "classification",    label: "Classification", type: "select", options: ["Within Normal Limits","Mild Asymmetry","Moderate Asymmetry","Significant Asymmetry"] },
-    { key: "clinicalNote",      label: "Clinical Note" },
+    { key: "clinicalNote",      label: "Clinical Note", type: "textarea", placeholder: "e.g. Jump height consistent with normative data; asymmetry driven by reduced concentric output on involved side…" },
   ];
   const valdSLDJFields = [
     { key: "invRSI",            label: `RSI — ${inv}`,                      unit: "" },
@@ -958,7 +971,7 @@ function Tab1({ data: d, setData: setD }) {
     { key: "concPeakForceAsym", label: "Max Concentric Peak Force Asym",    unit: "%" },
     { key: "concPeakForceCov",  label: "Concentric Peak Force CoV",         unit: "%" },
     { key: "classification",    label: "Classification", type: "select", options: ["Within Normal Limits","Mild Asymmetry","Moderate Asymmetry","Significant Asymmetry"] },
-    { key: "clinicalNote",      label: "Clinical Note" },
+    { key: "clinicalNote",      label: "Clinical Note", type: "textarea", placeholder: "e.g. RSI asymmetry exceeds threshold; patient demonstrates protective unloading strategy on landing…" },
   ];
 
   const setVald = (section, key, val) => sd(section, { ...(d[section] || {}), [key]: val });
@@ -3242,6 +3255,81 @@ async function saveSessionPDF(data) {
   page.drawText("TRM ACL Rehabilitation Testing Tool  —  This file contains embedded session data. Upload to TRM app to restore.", {
     x: L, y: y, size: 7, font, color: GRAY
   });
+
+  // ── PAGE 2: Plain-text SOAP note (copy-paste ready) ──
+  const page2 = doc.addPage([612, 792]);
+  let y2 = page2.getSize().height - 48;
+  const L2 = 48, R2 = page2.getSize().width - 48;
+
+  // Page 2 header bar
+  page2.drawRectangle({ x: 0, y: page2.getSize().height - 56, width: page2.getSize().width, height: 56, color: rgb(0.05,0.05,0.05) });
+  page2.drawText("TRM", { x: L2, y: page2.getSize().height - 34, size: 20, font: fontBold, color: rgb(1,1,1) });
+  page2.drawText("Documentation Copy  —  Select All & Paste into EMR", { x: L2 + 52, y: page2.getSize().height - 32, size: 9, font, color: rgb(0.5,0.5,0.5) });
+  page2.drawText("Page 2 of 2", { x: R2 - fontBold.widthOfTextAtSize("Page 2 of 2", 9), y: page2.getSize().height - 32, size: 9, font, color: rgb(0.4,0.4,0.4) });
+  y2 = page2.getSize().height - 72;
+
+  // Build the note text and render it line by line
+  const noteLines = buildNote(data).split("\n");
+  const maxLineWidth = R2 - L2;
+
+  // Helper: wrap long lines
+  const wrapLine = (text, fnt, size, maxW) => {
+    if (!text) return [""];
+    const words = text.split(" ");
+    const wrapped = [];
+    let cur = "";
+    for (const w of words) {
+      const test = cur ? cur + " " + w : w;
+      if (fnt.widthOfTextAtSize(test, size) <= maxW) {
+        cur = test;
+      } else {
+        if (cur) wrapped.push(cur);
+        cur = w;
+      }
+    }
+    if (cur) wrapped.push(cur);
+    return wrapped.length ? wrapped : [""];
+  };
+
+  for (const rawLine of noteLines) {
+    if (y2 < 48) {
+      // No more room — add continuation note at bottom
+      page2.drawText("… (continued — see Testing tab for full data)", { x: L2, y: 36, size: 7, font, color: GRAY });
+      break;
+    }
+
+    if (rawLine === "") {
+      y2 -= 7; // blank line spacer
+      continue;
+    }
+
+    // Section headers (all-caps lines ending with or being headers)
+    const isHeader = rawLine === rawLine.toUpperCase() && rawLine.trim().length > 0 && !rawLine.includes(":") && rawLine.trim().length < 60;
+    const isBullet = rawLine.startsWith("  ");
+
+    if (isHeader) {
+      y2 -= 4;
+      page2.drawRectangle({ x: L2 - 4, y: y2 - 3, width: R2 - L2 + 8, height: 15, color: rgb(0.91,0.91,0.91) });
+      page2.drawText(rawLine.trim(), { x: L2, y: y2, size: 8, font: fontBold, color: GRAY });
+      y2 -= 18;
+    } else {
+      const fSize = 9;
+      const xOffset = isBullet ? L2 + 10 : L2;
+      const wrapped = wrapLine(rawLine.trim(), font, fSize, maxLineWidth - (isBullet ? 10 : 0));
+      for (const wl of wrapped) {
+        if (y2 < 48) break;
+        page2.drawText(wl, { x: xOffset, y: y2, size: fSize, font, color: BLACK_R });
+        y2 -= 13;
+      }
+    }
+  }
+
+  // Page 2 footer
+  page2.drawLine({ start: { x: L2, y: 48 }, end: { x: R2, y: 48 }, thickness: 0.5, color: LGRAY });
+  page2.drawText("TRM Documentation Copy  —  Plain text for EMR entry. Open in any PDF viewer, select all text on this page, and paste.", {
+    x: L2, y: 36, size: 7, font, color: GRAY
+  });
+
 
   // Download
   const pdfBytes = await doc.save();
