@@ -665,6 +665,187 @@ function buildNote(d) {
 }
 
 // ─── LETTER BUILDER ───────────────────────────────────────────────────────────
+
+// ─── PROSE NOTE BUILDER (page 2 of PDF — flat single block, paste-ready) ──────
+function buildProseNote(d) {
+  const inv = d.patient.involvedSide;
+  const invR = inv === "Right";
+  const uninv = invR ? "Left" : "Right";
+  const parts = [];
+  const add = (s) => { if (s) parts.push(s); };
+
+  // Session context
+  const ctx = [];
+  if (d.patient.date)        ctx.push("Date of testing: " + d.patient.date);
+  if (d.patient.weeksPostOp) ctx.push(d.patient.weeksPostOp + " weeks post-op");
+  if (d.patient.surgeon)     ctx.push("surgeon: " + d.patient.surgeon);
+  if (d.patient.graftType)   ctx.push("graft: " + d.patient.graftType);
+  ctx.push("involved side: " + inv);
+  if (ctx.length) add(ctx.join(", ") + ".");
+
+  // Body metrics
+  const metrics = [];
+  if (hasVal(d.bw))      metrics.push("body weight " + d.bw + " lbs");
+  if (hasVal(d.tib))     metrics.push("tibial length " + d.tib + " cm");
+  if (hasVal(d.limbLen)) metrics.push("limb length " + d.limbLen + " cm");
+  if (metrics.length) add("Body metrics: " + metrics.join(", ") + ".");
+
+  // ROM
+  const romParts = [];
+  if (hasVal(d.flexR)) romParts.push("knee flexion right " + d.flexR + " deg");
+  if (hasVal(d.flexL)) romParts.push("left " + d.flexL + " deg");
+  if (hasVal(d.extR))  romParts.push("knee extension right " + d.extR + " deg");
+  if (hasVal(d.extL))  romParts.push("left " + d.extL + " deg");
+  if (romParts.length) {
+    const flexInv = invR ? d.flexR : d.flexL, flexUninv = invR ? d.flexL : d.flexR;
+    const extInv  = invR ? d.extR  : d.extL,  extUninv  = invR ? d.extL  : d.extR;
+    const fd = calcDiff(flexInv, flexUninv), ed = calcDiff(extInv, extUninv);
+    let s = "Knee ROM: " + romParts.join(", ");
+    if (fd !== null) s += ", flexion deficit (" + inv + " minus " + uninv + ") " + fd + " deg";
+    if (ed !== null) s += ", extension deficit " + ed + " deg";
+    add(s + ".");
+  }
+
+  // Girth
+  const gR = [d.girth.r5, d.girth.r10, d.girth.r15].reduce((a,v) => a + toNum(v), 0);
+  const gL = [d.girth.l5, d.girth.l10, d.girth.l15].reduce((a,v) => a + toNum(v), 0);
+  if (gR > 0 || gL > 0) {
+    const gBig = Math.max(gR, gL), gSmall = Math.min(gR, gL);
+    const gPct = gBig > 0 ? (((gBig - gSmall) / gBig) * 100).toFixed(1) : null;
+    const gSide = gR < gL ? "right deficit" : gL < gR ? "left deficit" : "equal";
+    let s = "Quad girth: right total " + gR.toFixed(1) + " cm, left total " + gL.toFixed(1) + " cm";
+    if (gPct !== null) s += ", asymmetry " + gPct + "% (" + gSide + ")";
+    add(s + ".");
+  }
+
+  // KE Strength
+  const keLSI = invR ? calcLSI(d.keR, d.keL) : calcLSI(d.keL, d.keR);
+  if (hasVal(d.keR) || hasVal(d.keL)) {
+    const keParts = [];
+    if (hasVal(d.keR)) keParts.push("right " + d.keR + " lbs");
+    if (hasVal(d.keL)) keParts.push("left " + d.keL + " lbs");
+    let s = "Knee extension strength: " + keParts.join(", ");
+    if (keLSI !== null) s += ", LSI (" + inv + "/" + uninv + ") " + keLSI + "%";
+    if (hasVal(d.tpfR) && hasVal(d.tpfL)) {
+      const asym = (Math.abs(toNum(d.tpfR) - toNum(d.tpfL)) / Math.max(toNum(d.tpfR), toNum(d.tpfL)) * 100).toFixed(1);
+      s += ", time to peak force right " + d.tpfR + " ms / left " + d.tpfL + " ms, asymmetry " + asym + "%";
+    }
+    add(s + ".");
+  }
+
+  // Quad torque
+  const torRnm = calcTorqueNm(d.forceR, d.tib);
+  const torLnm = calcTorqueNm(d.forceL, d.tib);
+  const normR = calcNorm(torRnm, d.bw);
+  const normL = calcNorm(torLnm, d.bw);
+  const torLSI = invR ? calcLSI(normR, normL) : calcLSI(normL, normR);
+  if (torRnm || torLnm) {
+    const tParts = [];
+    if (torRnm) tParts.push("right " + torRnm + " Nm" + (normR ? " (" + normR + " Nm/kg)" : ""));
+    if (torLnm) tParts.push("left " + torLnm + " Nm" + (normL ? " (" + normL + " Nm/kg)" : ""));
+    let s = "Isometric quad torque (HHD 90 deg): " + tParts.join(", ");
+    if (torLSI !== null) s += ", quadriceps index " + torLSI + "%";
+    add(s + ".");
+  }
+
+  // Hamstring
+  const hsTorRnm = calcTorqueNm(d.hsR, d.tib);
+  const hsTorLnm = calcTorqueNm(d.hsL, d.tib);
+  const hsNormR  = calcNorm(hsTorRnm, d.bw);
+  const hsNormL  = calcNorm(hsTorLnm, d.bw);
+  const hsLSI    = invR ? calcLSI(hsNormR, hsNormL) : calcLSI(hsNormL, hsNormR);
+  const normInvQ = invR ? normR : normL;
+  const hsNormInv = invR ? hsNormR : hsNormL;
+  const hqInv = (hasVal(hsNormInv) && hasVal(normInvQ) && toNum(normInvQ) > 0)
+    ? ((toNum(hsNormInv) / toNum(normInvQ)) * 100).toFixed(1) : null;
+  if (hasVal(d.hsR) || hasVal(d.hsL)) {
+    const hParts = [];
+    if (hsTorRnm) hParts.push("right " + d.hsR + " lbs / " + hsTorRnm + " Nm" + (hsNormR ? " (" + hsNormR + " Nm/kg)" : ""));
+    if (hsTorLnm) hParts.push("left " + d.hsL + " lbs / " + hsTorLnm + " Nm" + (hsNormL ? " (" + hsNormL + " Nm/kg)" : ""));
+    let s = "Hamstring strength: " + hParts.join(", ");
+    if (hsLSI !== null) s += ", LSI " + hsLSI + "%";
+    if (hqInv !== null) s += ", H:Q ratio (" + inv + ") " + hqInv + "%";
+    add(s + ".");
+  }
+
+  // Vald
+  const valdMeta2 = [
+    { key: "valdSquat", name: "Squat symmetry (Vald)",
+      fields: ["lsiPct","peakForceAsym","peakForceCov","classification","clinicalNote"],
+      labels: { lsiPct:"LSI", peakForceAsym:"peak force asym", peakForceCov:"peak force CoV", classification:"classification", clinicalNote:"note" },
+      units:  { lsiPct:"%", peakForceAsym:"%", peakForceCov:"%" } },
+    { key: "valdCMJ", name: "CMJ (Vald)",
+      fields: ["jumpHeight","eccBrakingImpAsym","concPeakForceAsym","modRSI","classification","clinicalNote"],
+      labels: { jumpHeight:"jump height", eccBrakingImpAsym:"ecc braking asym", concPeakForceAsym:"conc peak force asym", modRSI:"mod RSI", classification:"classification", clinicalNote:"note" },
+      units:  { jumpHeight:"cm", eccBrakingImpAsym:"%", concPeakForceAsym:"%" } },
+    { key: "valdSLDJ", name: "SLDJ (Vald)",
+      fields: ["invRSI","uninvRSI","eccBrakingImpAsym","concPeakForceAsym","classification","clinicalNote"],
+      labels: { invRSI:"RSI " + inv, uninvRSI:"RSI " + uninv, eccBrakingImpAsym:"ecc braking asym", concPeakForceAsym:"conc peak force asym", classification:"classification", clinicalNote:"note" },
+      units:  { invRSI:"", uninvRSI:"", eccBrakingImpAsym:"%", concPeakForceAsym:"%" } },
+  ];
+  valdMeta2.forEach(({ key, name, fields, labels, units }) => {
+    const v = d[key] || {};
+    if (!fields.some(f => v[f] && v[f] !== "")) return;
+    const items = fields.filter(f => v[f] && v[f] !== "")
+      .map(f => labels[f] + " " + v[f] + (units[f] || ""));
+    add(name + ": " + items.join(", ") + ".");
+  });
+
+  // Y-Balance
+  const yb = d.yBalance || {};
+  const ybCompR = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, d.limbLen);
+  const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
+  const ybHas = hasVal(yb.rAnt) || hasVal(yb.rPM) || hasVal(yb.rPL) || hasVal(yb.lAnt) || hasVal(yb.lPM) || hasVal(yb.lPL);
+  if (ybHas) {
+    const yParts = [];
+    if (ybCompR) yParts.push("right composite " + ybCompR + "%");
+    if (ybCompL) yParts.push("left composite " + ybCompL + "%");
+    if (hasVal(yb.rAnt) && hasVal(yb.lAnt)) {
+      const antDiff = Math.abs(toNum(yb.rAnt) - toNum(yb.lAnt)).toFixed(1);
+      yParts.push("anterior reach difference " + antDiff + " cm");
+    }
+    add("Y-Balance: " + yParts.join(", ") + " (benchmark >=90% limb length).");
+  }
+
+  // Hops
+  const hopAvgs2 = {
+    singleI: hopAvgIn(d.hops.singleI), singleU: hopAvgIn(d.hops.singleU),
+    tripleI: hopAvgIn(d.hops.tripleI), tripleU: hopAvgIn(d.hops.tripleU),
+    crossI:  hopAvgIn(d.hops.crossI),  crossU:  hopAvgIn(d.hops.crossU),
+  };
+  const hopLSIs2 = {
+    single: calcLSI(hopAvgs2.singleI, hopAvgs2.singleU),
+    triple: calcLSI(hopAvgs2.tripleI, hopAvgs2.tripleU),
+    cross:  calcLSI(hopAvgs2.crossI,  hopAvgs2.crossU),
+    timed:  calcTimedLSI(hopAvgTimed(d.hops.timedI), hopAvgTimed(d.hops.timedU)),
+  };
+  const hopEntries2 = [
+    ["single hop", hopAvgs2.singleI, hopAvgs2.singleU, hopLSIs2.single, "in"],
+    ["triple hop", hopAvgs2.tripleI, hopAvgs2.tripleU, hopLSIs2.triple, "in"],
+    ["crossover hop", hopAvgs2.crossI, hopAvgs2.crossU, hopLSIs2.cross, "in"],
+    ["6m timed hop", hopAvgTimed(d.hops.timedI), hopAvgTimed(d.hops.timedU), hopLSIs2.timed, "sec"],
+  ].filter(([, i, u]) => hasVal(i) || hasVal(u));
+  if (hopEntries2.length > 0) {
+    const hopStr = hopEntries2.map(([name, i, u, lsi, unit]) => {
+      let s = name + ": " + inv + " " + (i || "--") + " " + unit + " / " + uninv + " " + (u || "--") + " " + unit;
+      if (lsi !== null) s += " (LSI " + lsi + "%)";
+      return s;
+    }).join(", ");
+    add("Hop testing: " + hopStr + ". Benchmark: >=90% LSI.");
+  }
+
+  // Agility
+  if (hasVal(d.agilityTime)) add("Pro agility (5-10-5): " + d.agilityTime + " sec.");
+
+  // PROs
+  const proParts = [];
+  if (hasVal(d.ikdc))  proParts.push("IKDC " + d.ikdc + "/100");
+  if (hasVal(d.tampa)) proParts.push("Tampa Scale (TSK-11) " + d.tampa);
+  if (proParts.length) add("Patient-reported outcomes: " + proParts.join(", ") + ".");
+
+  return parts.join("\n\n");
+}
+
 function buildLetter(d, ptName, therapistName, clinic, impression) {
   const inv = d.patient.involvedSide;
   const invR = inv === "Right";
@@ -3256,77 +3437,56 @@ async function saveSessionPDF(data) {
     x: L, y: y, size: 7, font, color: GRAY
   });
 
-  // ── PAGE 2: Plain-text SOAP note (copy-paste ready) ──
+  // ── PAGE 2: Flat prose block — no headers, no spacing, paste straight into EMR ──
   const page2 = doc.addPage([612, 792]);
-  let y2 = page2.getSize().height - 48;
   const L2 = 48, R2 = page2.getSize().width - 48;
+  const p2h = page2.getSize().height;
 
   // Page 2 header bar
-  page2.drawRectangle({ x: 0, y: page2.getSize().height - 56, width: page2.getSize().width, height: 56, color: rgb(0.05,0.05,0.05) });
-  page2.drawText("TRM", { x: L2, y: page2.getSize().height - 34, size: 20, font: fontBold, color: rgb(1,1,1) });
-  page2.drawText("Documentation Copy  —  Select All & Paste into EMR", { x: L2 + 52, y: page2.getSize().height - 32, size: 9, font, color: rgb(0.5,0.5,0.5) });
-  page2.drawText("Page 2 of 2", { x: R2 - fontBold.widthOfTextAtSize("Page 2 of 2", 9), y: page2.getSize().height - 32, size: 9, font, color: rgb(0.4,0.4,0.4) });
-  y2 = page2.getSize().height - 72;
+  page2.drawRectangle({ x: 0, y: p2h - 56, width: page2.getSize().width, height: 56, color: rgb(0.05,0.05,0.05) });
+  page2.drawText("TRM", { x: L2, y: p2h - 34, size: 20, font: fontBold, color: rgb(1,1,1) });
+  page2.drawText("Documentation Copy  —  Select all text below and paste into your EMR", { x: L2 + 52, y: p2h - 32, size: 9, font, color: rgb(0.5,0.5,0.5) });
+  page2.drawText("Page 2 of 2", { x: R2 - font.widthOfTextAtSize("Page 2 of 2", 9), y: p2h - 32, size: 9, font, color: rgb(0.4,0.4,0.4) });
 
-  // Build the note text and render it line by line
-  const noteLines = buildNote(data).split("\n");
-  const maxLineWidth = R2 - L2;
+  // Build page 2: section-separated prose, blank line between each section, no headers
+  const proseText = buildProseNote(data);
+  const proseSections = proseText.split("\n\n");
+  const fSize2 = 10;
+  const lineH2 = 15;
+  const maxW2 = R2 - L2;
 
-  // Helper: wrap long lines
-  const wrapLine = (text, fnt, size, maxW) => {
-    if (!text) return [""];
+  const wrapText = (text) => {
     const words = text.split(" ");
-    const wrapped = [];
+    const lines = [];
     let cur = "";
     for (const w of words) {
       const test = cur ? cur + " " + w : w;
-      if (fnt.widthOfTextAtSize(test, size) <= maxW) {
+      if (font.widthOfTextAtSize(test, fSize2) <= maxW2) {
         cur = test;
       } else {
-        if (cur) wrapped.push(cur);
+        if (cur) lines.push(cur);
         cur = w;
       }
     }
-    if (cur) wrapped.push(cur);
-    return wrapped.length ? wrapped : [""];
+    if (cur) lines.push(cur);
+    return lines;
   };
 
-  for (const rawLine of noteLines) {
-    if (y2 < 48) {
-      // No more room — add continuation note at bottom
-      page2.drawText("… (continued — see Testing tab for full data)", { x: L2, y: 36, size: 7, font, color: GRAY });
-      break;
+  let y2 = p2h - 72;
+  for (const section of proseSections) {
+    if (!section.trim()) continue;
+    const wrapped = wrapText(section.trim());
+    for (const line of wrapped) {
+      if (y2 < 56) break;
+      page2.drawText(line, { x: L2, y: y2, size: fSize2, font, color: BLACK_R });
+      y2 -= lineH2;
     }
-
-    if (rawLine === "") {
-      y2 -= 7; // blank line spacer
-      continue;
-    }
-
-    // Section headers (all-caps lines ending with or being headers)
-    const isHeader = rawLine === rawLine.toUpperCase() && rawLine.trim().length > 0 && !rawLine.includes(":") && rawLine.trim().length < 60;
-    const isBullet = rawLine.startsWith("  ");
-
-    if (isHeader) {
-      y2 -= 4;
-      page2.drawRectangle({ x: L2 - 4, y: y2 - 3, width: R2 - L2 + 8, height: 15, color: rgb(0.91,0.91,0.91) });
-      page2.drawText(rawLine.trim(), { x: L2, y: y2, size: 8, font: fontBold, color: GRAY });
-      y2 -= 18;
-    } else {
-      const fSize = 9;
-      const xOffset = isBullet ? L2 + 10 : L2;
-      const wrapped = wrapLine(rawLine.trim(), font, fSize, maxLineWidth - (isBullet ? 10 : 0));
-      for (const wl of wrapped) {
-        if (y2 < 48) break;
-        page2.drawText(wl, { x: xOffset, y: y2, size: fSize, font, color: BLACK_R });
-        y2 -= 13;
-      }
-    }
+    y2 -= 10; // blank line gap between sections
   }
 
   // Page 2 footer
   page2.drawLine({ start: { x: L2, y: 48 }, end: { x: R2, y: 48 }, thickness: 0.5, color: LGRAY });
-  page2.drawText("TRM Documentation Copy  —  Plain text for EMR entry. Open in any PDF viewer, select all text on this page, and paste.", {
+  page2.drawText("Select all text on this page and paste into your documentation system.", {
     x: L2, y: 36, size: 7, font, color: GRAY
   });
 
