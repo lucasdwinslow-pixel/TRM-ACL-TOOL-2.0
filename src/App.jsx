@@ -933,6 +933,15 @@ function Tab1({ data: d, setData: setD }) {
     const level = normGroup.replace("Male ", "").replace("Female ", "");
     setNormGroup(`${s} ${level}`);
   };
+  // Re-sync normGroup if sex is restored from autosave (d.patient.sex changes externally)
+  useEffect(() => {
+    const sex = d.patient.sex;
+    if (!sex) return;
+    setNormGroup(prev => {
+      const level = prev.replace("Male ", "").replace("Female ", "");
+      return `${sex} ${level}`;
+    });
+  }, [d.patient.sex]);
   const norm = agilityNorms[normGroup];
   const agClass = () => {
     if (!hasVal(d.agilityTime) || !norm) return null;
@@ -3140,6 +3149,7 @@ async function saveSessionPDF(data) {
   y = height - 90;
 
   const section = (title) => {
+    if (y < 60) return; // overflow guard
     y -= 6;
     page.drawRectangle({ x: L - 4, y: y - 4, width: R - L + 8, height: 18, color: rgb(0.93,0.93,0.93) });
     page.drawText(title.toUpperCase(), { x: L, y: y + 2, size: 8, font: fontBold, color: GRAY });
@@ -3147,6 +3157,7 @@ async function saveSessionPDF(data) {
   };
 
   const row = (label, value, x2 = null, label2 = null, value2 = null) => {
+    if (y < 50) return; // overflow guard
     page.drawText(label, { x: L, y, size: 9, font: fontBold, color: BLACK_R });
     page.drawText(String(value || "—"), { x: L + 130, y, size: 9, font, color: value ? BLACK_R : GRAY });
     if (x2 && label2) {
@@ -3401,6 +3412,8 @@ export default function App() {
 
   const [data, setData] = useState(BLANK_DATA);
   const [storageRestored, setStorageRestored] = useState(false);
+  // Gate: don't autosave until we've finished the restore attempt
+  const [restoreComplete, setRestoreComplete] = useState(false);
 
   // ── AUTO-RESTORE from storage on first load ──────────────────────────────
   useEffect(() => {
@@ -3418,12 +3431,17 @@ export default function App() {
         }
       } catch (e) {
         // No saved data — start fresh
+      } finally {
+        // Always mark restore as complete so autosave can begin
+        setRestoreComplete(true);
       }
     })();
   }, []);
 
   // ── AUTO-SAVE to storage on every data change ─────────────────────────────
+  // Only runs after restoreComplete is true — prevents overwriting saved data on mount
   useEffect(() => {
+    if (!restoreComplete) return;
     (async () => {
       try {
         await window.storage.set("trm_autosave", JSON.stringify(data));
@@ -3431,22 +3449,38 @@ export default function App() {
         // Storage unavailable — silently continue
       }
     })();
-  }, [data]);
+  }, [data, restoreComplete]);
 
   // ── WARN before accidental refresh / tab close ───────────────────────────
+  // beforeunload works on desktop; pagehide is used for iOS Safari compatibility
   useEffect(() => {
     const hasAnyData = () =>
       !!(data.patient?.date || data.patient?.surgeon || data.bw || data.tib ||
         data.limbLen || data.flexR || data.flexL || data.keR || data.keL ||
         data.hops?.singleI?.[0]?.ft);
+
     const handleBeforeUnload = (e) => {
       if (hasAnyData()) {
         e.preventDefault();
         e.returnValue = "";
       }
     };
+
+    // iOS Safari fires pagehide instead of beforeunload for back/forward/refresh
+    // We force a final autosave here as a safety net
+    const handlePageHide = () => {
+      try {
+        const current = JSON.stringify(data);
+        window.storage.set("trm_autosave", current);
+      } catch (e) {}
+    };
+
     window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
   }, [data]);
 
   const tabs = [
@@ -3527,13 +3561,13 @@ export default function App() {
   };
 
   // New patient: clear everything
-  const doNewPatient = () => {
+  const doNewPatient = async () => {
     setData(BLANK_DATA);
     setSessions([]);
     setNewPtModal(false);
     setActiveTab(0);
     // Clear autosave so blank form doesn't restore on next visit
-    try { window.storage.delete("trm_autosave"); } catch (e) {}
+    try { await window.storage.delete("trm_autosave"); } catch (e) {}
   };
 
   return (
