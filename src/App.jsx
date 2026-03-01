@@ -113,6 +113,10 @@ if (typeof document !== "undefined" && !document.getElementById("trm-mobile-styl
   const s = document.createElement("style");
   s.id = "trm-mobile-styles";
   s.textContent = `
+    /* Prevent iOS Safari pull-to-refresh from resetting the page */
+    html, body {
+      overscroll-behavior-y: none;
+    }
     @media (max-width: 600px) {
       .trm-r2, .trm-r3, .trm-r4 { grid-template-columns: 1fr !important; }
       .trm-r2-persist { grid-template-columns: 1fr 1fr !important; }
@@ -3416,15 +3420,30 @@ export default function App() {
   const [restoreComplete, setRestoreComplete] = useState(false);
 
   // ── AUTO-RESTORE from storage on first load ──────────────────────────────
+  // Checks window.storage first (cross-session), then localStorage (iOS pull-to-refresh fallback)
   useEffect(() => {
     (async () => {
       try {
-        const saved = await window.storage.get("trm_autosave");
-        if (saved && saved.value) {
-          const parsed = JSON.parse(saved.value);
-          const hasData = parsed.patient?.date || parsed.patient?.surgeon || parsed.bw || parsed.tib;
+        let parsedData = null;
+
+        // Primary: window.storage (persists across sessions)
+        try {
+          const saved = await window.storage.get("trm_autosave");
+          if (saved && saved.value) parsedData = JSON.parse(saved.value);
+        } catch (e) {}
+
+        // Fallback: localStorage (synchronous — survives iOS pull-to-refresh within same session)
+        if (!parsedData) {
+          try {
+            const local = localStorage.getItem("trm_autosave_local");
+            if (local) parsedData = JSON.parse(local);
+          } catch (e) {}
+        }
+
+        if (parsedData) {
+          const hasData = parsedData.patient?.date || parsedData.patient?.surgeon || parsedData.bw || parsedData.tib;
           if (hasData) {
-            setData(parsed);
+            setData(parsedData);
             setStorageRestored(true);
             setTimeout(() => setStorageRestored(false), 5000);
           }
@@ -3432,7 +3451,6 @@ export default function App() {
       } catch (e) {
         // No saved data — start fresh
       } finally {
-        // Always mark restore as complete so autosave can begin
         setRestoreComplete(true);
       }
     })();
@@ -3440,11 +3458,16 @@ export default function App() {
 
   // ── AUTO-SAVE to storage on every data change ─────────────────────────────
   // Only runs after restoreComplete is true — prevents overwriting saved data on mount
+  // Uses BOTH window.storage (persistent) AND localStorage (synchronous iOS fallback)
   useEffect(() => {
     if (!restoreComplete) return;
+    const serialized = JSON.stringify(data);
+    // Synchronous localStorage write — survives iOS pull-to-refresh & tab switches instantly
+    try { localStorage.setItem("trm_autosave_local", serialized); } catch (e) {}
+    // Async window.storage write — persists across sessions
     (async () => {
       try {
-        await window.storage.set("trm_autosave", JSON.stringify(data));
+        await window.storage.set("trm_autosave", serialized);
       } catch (e) {
         // Storage unavailable — silently continue
       }
@@ -3568,6 +3591,7 @@ export default function App() {
     setActiveTab(0);
     // Clear autosave so blank form doesn't restore on next visit
     try { await window.storage.delete("trm_autosave"); } catch (e) {}
+    try { localStorage.removeItem("trm_autosave_local"); } catch (e) {}
   };
 
   return (
