@@ -107,7 +107,7 @@ if (typeof document !== "undefined" && !document.getElementById("trm-mobile-styl
   if (!document.querySelector('meta[name="viewport"]')) {
     const meta = document.createElement("meta");
     meta.name = "viewport";
-    meta.content = "width=device-width, initial-scale=1, maximum-scale=1";
+    meta.content = "width=device-width, initial-scale=1, viewport-fit=cover";
     document.head.appendChild(meta);
   }
   const s = document.createElement("style");
@@ -116,6 +116,14 @@ if (typeof document !== "undefined" && !document.getElementById("trm-mobile-styl
     /* Prevent iOS Safari pull-to-refresh from resetting the page */
     html, body {
       overscroll-behavior-y: none;
+    }
+    /* Support iPhone notch/Dynamic Island and home bar safe areas */
+    .trm-fab {
+      bottom: max(24px, env(safe-area-inset-bottom, 24px)) !important;
+      right: max(24px, env(safe-area-inset-right, 24px)) !important;
+    }
+    .trm-main-content {
+      padding-bottom: max(100px, calc(80px + env(safe-area-inset-bottom, 0px))) !important;
     }
     @media (max-width: 600px) {
       .trm-r2, .trm-r3, .trm-r4 { grid-template-columns: 1fr !important; }
@@ -126,11 +134,13 @@ if (typeof document !== "undefined" && !document.getElementById("trm-mobile-styl
       .trm-tab-btn { padding: 10px 12px !important; }
       .trm-stat-bar { gap: 16px !important; padding: 10px 14px !important; }
       .trm-fab { bottom: 16px !important; right: 12px !important; gap: 5px !important; }
-      .trm-fab button { padding: 10px 12px !important; font-size: 11px !important; min-height: 44px; }
+      .trm-fab button { padding: 10px 12px !important; font-size: 11px !important; min-height: 44px; min-width: 44px; }
       input[type="number"], input[type="text"], select, textarea { 
         font-size: 16px !important; 
         min-height: 44px !important;
       }
+      /* Ensure content is never hidden behind the fixed FAB bar */
+      .trm-main-content { padding-bottom: 90px !important; }
     }
   `;
   document.head.appendChild(s);
@@ -219,6 +229,8 @@ function Field({ label, value, onChange, type = "number", step = "0.1", placehol
           ? { ...inp, color: LIME, background: "#0f0f0f", borderColor: LIME + "33", cursor: "default" }
           : invalid ? inpInvalid : inp}
         type={readOnly ? "text" : type} step={step} placeholder={placeholder}
+        inputMode={!readOnly && type === "number" ? "decimal" : undefined}
+        autoCorrect="off" autoCapitalize="off" spellCheck={false}
         value={value} readOnly={readOnly}
         onChange={readOnly ? undefined : e => onChange(e.target.value)}
         title={invalid ? `Value out of expected range (${VALID_RANGES[fieldKey]?.[0]}–${VALID_RANGES[fieldKey]?.[1]})` : undefined}
@@ -261,6 +273,7 @@ function ConfirmModal({ open, fileName, onConfirm, onCancel }) {
       position: "fixed", inset: 0, zIndex: 1000,
       background: "rgba(0,0,0,0.75)",
       backdropFilter: "blur(6px)",
+      WebkitBackdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: 20,
     }}>
@@ -348,6 +361,7 @@ function NewPatientModal({ open, onConfirm, onCancel }) {
       position: "fixed", inset: 0, zIndex: 1000,
       background: "rgba(0,0,0,0.75)",
       backdropFilter: "blur(6px)",
+      WebkitBackdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: 20,
     }}>
@@ -428,7 +442,7 @@ function ValdCard({ title, id, fields, values, onChange, highlight, focusable, a
                 {f.options.map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             ) : (
-              <input style={inp} type="number" step={f.step || "0.1"} placeholder="—"
+              <input style={inp} type="number" inputMode="decimal" step={f.step || "0.1"} placeholder="—"
                 value={values[f.key] || ""} onChange={e => onChange(f.key, e.target.value)} />
             )}
           </div>
@@ -992,10 +1006,21 @@ function Tab1({ data: d, setData: setD }) {
   const [noteCopied, setNoteCopied] = useState(false);
   const generateNote = () => sd("noteText", buildNote(d));
   const copyNote = () => {
-    navigator.clipboard.writeText(d.noteText).then(() => {
-      setNoteCopied(true);
-      setTimeout(() => setNoteCopied(false), 2500);
-    });
+    navigator.clipboard.writeText(d.noteText)
+      .then(() => { setNoteCopied(true); setTimeout(() => setNoteCopied(false), 2500); })
+      .catch(() => {
+        // iOS fallback: select a textarea and use execCommand
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = d.noteText;
+          ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          setNoteCopied(true); setTimeout(() => setNoteCopied(false), 2500);
+        } catch (e2) {}
+      });
   };
 
   return (
@@ -1072,7 +1097,7 @@ function Tab1({ data: d, setData: setD }) {
               <div key={k} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr 1fr 90px", gap: 8, marginBottom: 8, alignItems: "center" }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: WHITE }}>{side}</div>
                 {["5","10","15"].map(n => (
-                  <input key={n} style={{ ...inp, minHeight: 44 }} type="number" step="0.1" placeholder="—"
+                  <input key={n} style={{ ...inp, minHeight: 44 }} type="number" inputMode="decimal" step="0.1" placeholder="—"
                     value={d.girth[`${k}${n}`]}
                     onChange={e => sd("girth", { ...d.girth, [`${k}${n}`]: e.target.value })} />
                 ))}
@@ -1265,7 +1290,7 @@ function Tab1({ data: d, setData: setD }) {
               {hasVal(limbLen) && <div style={{ fontSize: 10, color: MUTED }}>{limbLen} cm LL</div>}
             </div>
             {["Ant","PM","PL"].map(dir => (
-              <input key={dir} style={inp} type="number" step="0.1" placeholder="—"
+              <input key={dir} style={inp} type="number" inputMode="decimal" step="0.1" placeholder="—"
                 value={yb[`${k}${dir}`] || ""}
                 onChange={e => setYB(`${k}${dir}`, e.target.value)} />
             ))}
@@ -1344,7 +1369,7 @@ function Tab1({ data: d, setData: setD }) {
                         <span style={{ fontSize: 10, color: MUTED, fontWeight: 700 }}>T{t+1}</span>
                         <div>
                           <label style={{ ...lbl, marginBottom: 2 }}>ft</label>
-                          <input style={inp} type="number" step="1" min="0" placeholder="0"
+                          <input style={inp} type="number" inputMode="decimal" step="1" min="0" placeholder="0"
                             value={d.hops[key][t].ft}
                             onChange={e => {
                               const trials = d.hops[key].map((tr, i) => i === t ? { ...tr, ft: e.target.value } : tr);
@@ -1353,7 +1378,7 @@ function Tab1({ data: d, setData: setD }) {
                         </div>
                         <div>
                           <label style={{ ...lbl, marginBottom: 2 }}>in</label>
-                          <input style={inp} type="number" step="0.1" min="0" max="11.9" placeholder="0"
+                          <input style={inp} type="number" inputMode="decimal" step="0.1" min="0" max="11.9" placeholder="0"
                             value={d.hops[key][t].in}
                             onChange={e => {
                               const trials = d.hops[key].map((tr, i) => i === t ? { ...tr, in: e.target.value } : tr);
@@ -1395,7 +1420,7 @@ function Tab1({ data: d, setData: setD }) {
                       <span style={{ fontSize: 10, color: MUTED, fontWeight: 700 }}>T{t+1}</span>
                       <div>
                         <label style={{ ...lbl, marginBottom: 2 }}>sec</label>
-                        <input style={inp} type="number" step="0.01" min="0" placeholder="0.00"
+                        <input style={inp} type="number" inputMode="decimal" step="0.01" min="0" placeholder="0.00"
                           value={d.hops[key][t]}
                           onChange={e => {
                             const trials = d.hops[key].map((v, i) => i === t ? e.target.value : v);
@@ -1429,7 +1454,7 @@ function Tab1({ data: d, setData: setD }) {
         <R3>
           <div>
             <label style={lbl}>Best Time (sec)</label>
-            <input style={isOutOfRange("agilityTime", d.agilityTime) ? inpInvalid : inp} type="number" step="0.01" placeholder="e.g. 4.42" value={d.agilityTime} onChange={e => sd("agilityTime", e.target.value)} title={isOutOfRange("agilityTime", d.agilityTime) ? "Value out of expected range (3.0–10.0s)" : undefined} />
+            <input style={isOutOfRange("agilityTime", d.agilityTime) ? inpInvalid : inp} type="number" inputMode="decimal" step="0.01" placeholder="e.g. 4.42" value={d.agilityTime} onChange={e => sd("agilityTime", e.target.value)} title={isOutOfRange("agilityTime", d.agilityTime) ? "Value out of expected range (3.0–10.0s)" : undefined} />
           </div>
           <div style={{ gridColumn: "span 2" }}>
             <label style={lbl}>Comparison Norm Group</label>
@@ -1496,7 +1521,7 @@ function Tab1({ data: d, setData: setD }) {
               {noteCopied ? "✓ Copied!" : "Copy to Clipboard"}
             </button>
           </div>
-          <pre style={{ padding: 20, background: "#0a0a0a", color: "#d4faa6", fontSize: 12, fontFamily: "monospace", lineHeight: 1.8, whiteSpace: "pre-wrap", margin: 0, maxHeight: 500, overflowY: "auto" }}>{d.noteText}</pre>
+          <pre style={{ padding: 20, background: "#0a0a0a", color: "#d4faa6", fontSize: 12, fontFamily: "monospace", lineHeight: 1.8, whiteSpace: "pre-wrap", margin: 0, maxHeight: 500, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>{d.noteText}</pre>
         </div>
       )}
     </div>
@@ -1894,10 +1919,20 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
   };
 
   const copyPara = () => {
-    navigator.clipboard.writeText(paragraph).then(() => {
-      setCopiedPara(true);
-      setTimeout(() => setCopiedPara(false), 2500);
-    });
+    navigator.clipboard.writeText(paragraph)
+      .then(() => { setCopiedPara(true); setTimeout(() => setCopiedPara(false), 2500); })
+      .catch(() => {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = paragraph;
+          ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          setCopiedPara(true); setTimeout(() => setCopiedPara(false), 2500);
+        } catch (e2) {}
+      });
   };
 
   // Column width
@@ -1941,7 +1976,7 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
           {!hasSessions && <span style={{ fontSize: 11, color: MUTED, marginLeft: 8 }}>— Load session PDFs to enable multi-session comparison</span>}
         </div>
 
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <div style={{ minWidth: totalW }}>
             {/* Column headers */}
             <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, background: "#141414" }}>
@@ -2872,7 +2907,7 @@ function Tab3({ currentData: d }) {
             }}>
 
               {/* Section tabs */}
-              <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, background: "#161616", overflowX: "auto", scrollbarWidth: "none" }}>
+              <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}`, background: "#161616", overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
                 {trk.sections.map((s, si) => {
                   const isActive = isActiveTrack && sectionIdx === si;
                   const sp = sectionProgress(trk, ti, si);
@@ -3067,7 +3102,20 @@ function Tab4({ currentData: d }) {
 
   const generate = () => setLetter(buildLetter(d, ptName, therapistName, clinic, impression));
   const copy = () => {
-    navigator.clipboard.writeText(letter).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); });
+    navigator.clipboard.writeText(letter)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); })
+      .catch(() => {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = letter;
+          ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+          document.body.appendChild(ta);
+          ta.focus(); ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          setCopied(true); setTimeout(() => setCopied(false), 2500);
+        } catch (e2) {}
+      });
   };
 
   return (
@@ -3108,7 +3156,7 @@ function Tab4({ currentData: d }) {
               {copied ? "✓ Copied!" : "Copy to Clipboard"}
             </button>
           </div>
-          <pre style={{ padding: 24, background: "#0a0a0a", color: "#d4faa6", fontSize: 13, fontFamily: "inherit", lineHeight: 1.9, whiteSpace: "pre-wrap", margin: 0, maxHeight: 600, overflowY: "auto" }}>{letter}</pre>
+          <pre style={{ padding: 24, background: "#0a0a0a", color: "#d4faa6", fontSize: 13, fontFamily: "inherit", lineHeight: 1.9, whiteSpace: "pre-wrap", margin: 0, maxHeight: 600, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>{letter}</pre>
         </div>
       )}
     </div>
@@ -3116,6 +3164,29 @@ function Tab4({ currentData: d }) {
 }
 
 // ─── SESSION SAVE / LOAD ──────────────────────────────────────────────────────
+// Replaces characters outside WinAnsi (the default pdf-lib encoding) with safe ASCII equivalents
+function sanitizePdf(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/≥/g, ">=")
+    .replace(/≤/g, "<=")
+    .replace(/→/g, "->")
+    .replace(/←/g, "<-")
+    .replace(/≠/g, "!=")
+    .replace(/±/g, "+/-")
+    .replace(/×/g, "x")
+    .replace(/÷/g, "/")
+    .replace(/°/g, " deg")
+    .replace(/–/g, "-")
+    .replace(/—/g, "-")
+    .replace(/'/g, "'")
+    .replace(/'/g, "'")
+    .replace(/"/g, '"')
+    .replace(/"/g, '"')
+    .replace(/…/g, "...")
+    .replace(/[^\x00-\xFF]/g, "?"); // catch-all for any other non-Latin-1 chars
+}
+
 async function saveSessionPDF(data) {
   const { PDFDocument, rgb, StandardFonts } = await getPdfLib();
   const doc = await PDFDocument.create();
@@ -3144,11 +3215,11 @@ async function saveSessionPDF(data) {
 
   // Header bar
   page.drawRectangle({ x: 0, y: height - 72, width, height: 72, color: rgb(0.05, 0.05, 0.05) });
-  page.drawText("TRM", { x: L, y: height - 44, size: 26, font: fontBold, color: rgb(1,1,1) });
-  page.drawText("ACL Testing & Outcome Measures", { x: L + 60, y: height - 40, size: 11, font, color: rgb(0.6,0.6,0.6) });
+  page.drawText(sanitizePdf("TRM"), { x: L, y: height - 44, size: 26, font: fontBold, color: rgb(1,1,1) });
+  page.drawText(sanitizePdf("ACL Testing & Outcome Measures"), { x: L + 60, y: height - 40, size: 11, font, color: rgb(0.6,0.6,0.6) });
   const dateStr = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
-  page.drawText(dateStr, { x: R - font.widthOfTextAtSize(dateStr, 10), y: height - 38, size: 10, font, color: rgb(0.5,0.5,0.5) });
-  page.drawText("Session Report", { x: R - fontBold.widthOfTextAtSize("Session Report", 11), y: height - 52, size: 11, font: fontBold, color: LIME_R });
+  page.drawText(sanitizePdf(dateStr), { x: R - font.widthOfTextAtSize(dateStr, 10), y: height - 38, size: 10, font, color: rgb(0.5,0.5,0.5) });
+  page.drawText(sanitizePdf("Session Report"), { x: R - fontBold.widthOfTextAtSize("Session Report", 11), y: height - 52, size: 11, font: fontBold, color: LIME_R });
 
   y = height - 90;
 
@@ -3156,17 +3227,17 @@ async function saveSessionPDF(data) {
     if (y < 60) return; // overflow guard
     y -= 6;
     page.drawRectangle({ x: L - 4, y: y - 4, width: R - L + 8, height: 18, color: rgb(0.93,0.93,0.93) });
-    page.drawText(title.toUpperCase(), { x: L, y: y + 2, size: 8, font: fontBold, color: GRAY });
+    page.drawText(sanitizePdf(title.toUpperCase()), { x: L, y: y + 2, size: 8, font: fontBold, color: GRAY });
     y -= 20;
   };
 
   const row = (label, value, x2 = null, label2 = null, value2 = null) => {
     if (y < 50) return; // overflow guard
-    page.drawText(label, { x: L, y, size: 9, font: fontBold, color: BLACK_R });
-    page.drawText(String(value || "—"), { x: L + 130, y, size: 9, font, color: value ? BLACK_R : GRAY });
+    page.drawText(sanitizePdf(label), { x: L, y, size: 9, font: fontBold, color: BLACK_R });
+    page.drawText(sanitizePdf(String(value || "—")), { x: L + 130, y, size: 9, font, color: value ? BLACK_R : GRAY });
     if (x2 && label2) {
-      page.drawText(label2, { x: x2, y, size: 9, font: fontBold, color: BLACK_R });
-      page.drawText(String(value2 || "—"), { x: x2 + 130, y, size: 9, font, color: value2 ? BLACK_R : GRAY });
+      page.drawText(sanitizePdf(label2), { x: x2, y, size: 9, font: fontBold, color: BLACK_R });
+      page.drawText(sanitizePdf(String(value2 || "—")), { x: x2 + 130, y, size: 9, font, color: value2 ? BLACK_R : GRAY });
     }
     y -= 14;
   };
@@ -3255,7 +3326,7 @@ async function saveSessionPDF(data) {
     valdSections.forEach(({ label, v, rows }) => {
       const dataRows = rows.filter(([, key]) => v[key] && v[key] !== "");
       if (dataRows.length === 0) return;
-      page.drawText(label, { x: L, y, size: 8, font: fontBold, color: GRAY });
+      page.drawText(sanitizePdf(label), { x: L, y, size: 8, font: fontBold, color: GRAY });
       y -= 13;
       dataRows.forEach(([lbl, key, unit]) => {
         row(`  ${lbl}:`, unit ? `${v[key]}${unit}` : v[key]);
@@ -3267,7 +3338,7 @@ async function saveSessionPDF(data) {
   // Footer
   y = 36;
   page.drawLine({ start: { x: L, y: y + 14 }, end: { x: R, y: y + 14 }, thickness: 0.5, color: LGRAY });
-  page.drawText("TRM ACL Rehabilitation Testing Tool  —  This file contains embedded session data. Upload to TRM app to restore.", {
+  page.drawText(sanitizePdf("TRM ACL Rehabilitation Testing Tool  —  This file contains embedded session data. Upload to TRM app to restore."), {
     x: L, y: y, size: 7, font, color: GRAY
   });
 
@@ -3278,9 +3349,9 @@ async function saveSessionPDF(data) {
 
   // Page 2 header bar
   page2.drawRectangle({ x: 0, y: page2.getSize().height - 56, width: page2.getSize().width, height: 56, color: rgb(0.05,0.05,0.05) });
-  page2.drawText("TRM", { x: L2, y: page2.getSize().height - 34, size: 20, font: fontBold, color: rgb(1,1,1) });
-  page2.drawText("Documentation Copy  —  Select All & Paste into EMR", { x: L2 + 52, y: page2.getSize().height - 32, size: 9, font, color: rgb(0.5,0.5,0.5) });
-  page2.drawText("Page 2 of 2", { x: R2 - fontBold.widthOfTextAtSize("Page 2 of 2", 9), y: page2.getSize().height - 32, size: 9, font, color: rgb(0.4,0.4,0.4) });
+  page2.drawText(sanitizePdf("TRM"), { x: L2, y: page2.getSize().height - 34, size: 20, font: fontBold, color: rgb(1,1,1) });
+  page2.drawText(sanitizePdf("Documentation Copy  —  Select All & Paste into EMR"), { x: L2 + 52, y: page2.getSize().height - 32, size: 9, font, color: rgb(0.5,0.5,0.5) });
+  page2.drawText(sanitizePdf("Page 2 of 2"), { x: R2 - fontBold.widthOfTextAtSize("Page 2 of 2", 9), y: page2.getSize().height - 32, size: 9, font, color: rgb(0.4,0.4,0.4) });
   y2 = page2.getSize().height - 72;
 
   // Build the note text and render it line by line
@@ -3309,7 +3380,7 @@ async function saveSessionPDF(data) {
   for (const rawLine of noteLines) {
     if (y2 < 48) {
       // No more room — add continuation note at bottom
-      page2.drawText("… (continued — see Testing tab for full data)", { x: L2, y: 36, size: 7, font, color: GRAY });
+      page2.drawText(sanitizePdf("… (continued — see Testing tab for full data)"), { x: L2, y: 36, size: 7, font, color: GRAY });
       break;
     }
 
@@ -3325,7 +3396,7 @@ async function saveSessionPDF(data) {
     if (isHeader) {
       y2 -= 4;
       page2.drawRectangle({ x: L2 - 4, y: y2 - 3, width: R2 - L2 + 8, height: 15, color: rgb(0.91,0.91,0.91) });
-      page2.drawText(rawLine.trim(), { x: L2, y: y2, size: 8, font: fontBold, color: GRAY });
+      page2.drawText(sanitizePdf(rawLine.trim()), { x: L2, y: y2, size: 8, font: fontBold, color: GRAY });
       y2 -= 18;
     } else {
       const fSize = 9;
@@ -3333,7 +3404,7 @@ async function saveSessionPDF(data) {
       const wrapped = wrapLine(rawLine.trim(), font, fSize, maxLineWidth - (isBullet ? 10 : 0));
       for (const wl of wrapped) {
         if (y2 < 48) break;
-        page2.drawText(wl, { x: xOffset, y: y2, size: fSize, font, color: BLACK_R });
+        page2.drawText(sanitizePdf(wl), { x: xOffset, y: y2, size: fSize, font, color: BLACK_R });
         y2 -= 13;
       }
     }
@@ -3341,20 +3412,39 @@ async function saveSessionPDF(data) {
 
   // Page 2 footer
   page2.drawLine({ start: { x: L2, y: 48 }, end: { x: R2, y: 48 }, thickness: 0.5, color: LGRAY });
-  page2.drawText("TRM Documentation Copy  —  Plain text for EMR entry. Open in any PDF viewer, select all text on this page, and paste.", {
+  page2.drawText(sanitizePdf("TRM Documentation Copy  —  Plain text for EMR entry. Open in any PDF viewer, select all text on this page, and paste."), {
     x: L2, y: 36, size: 7, font, color: GRAY
   });
 
 
-  // Download
+  // Download — iOS Safari ignores the `download` attribute on blob URLs and blocks
+  // programmatic anchor clicks that happen outside a direct user gesture.
+  // Strategy: detect iOS and open the blob URL in a new tab (Safari will show a
+  // share sheet from which the user can save to Files). On all other browsers we
+  // use the standard hidden-anchor click but delay revocation so the browser
+  // has time to start the download first.
   const pdfBytes = await doc.save();
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
   const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href = url;
-  a.download = `TRM_Session_${new Date().toISOString().slice(0,10)}.pdf`;
-  a.click();
-  URL.revokeObjectURL(url);
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+  if (isIOS) {
+    // On iOS, open blob URL in new tab — user taps share icon → Save to Files
+    window.open(url, "_blank");
+    // Revoke after a generous delay so the new tab can load the PDF
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } else {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `TRM_Session_${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Delay revocation so download has time to start
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
 }
 
 async function loadSessionPDF(file, onData, onError) {
@@ -3515,8 +3605,18 @@ export default function App() {
 
   const handleSave = async () => {
     setSaving(true);
-    try { await saveSessionPDF(data); }
-    catch(e) { setLoadMsg({type:"error", text:"Save failed: " + e.message}); }
+    try {
+      await saveSessionPDF(data);
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      if (isIOS) {
+        setLoadMsg({ type: "success", text: "PDF opened — tap the Share icon (box with arrow) then \"Save to Files\" to save it." });
+        setTimeout(() => setLoadMsg(null), 10000);
+      }
+    } catch(e) {
+      setLoadMsg({type:"error", text:"Save failed: " + e.message});
+      setTimeout(() => setLoadMsg(null), 8000);
+    }
     setSaving(false);
   };
 
@@ -3610,7 +3710,7 @@ export default function App() {
         onCancel={() => setNewPtModal(false)}
       />
 
-      <div style={{ background: DARK, borderBottom: `1px solid ${BORDER}`, position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 20px rgba(0,0,0,0.8)" }}>
+      <div style={{ background: DARK, borderBottom: `1px solid ${BORDER}`, position: "-webkit-sticky", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 20px rgba(0,0,0,0.8)" }}>
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 20px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 58 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
@@ -3636,7 +3736,7 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px" }}>
+      <div className="trm-main-content" style={{ maxWidth: 900, margin: "0 auto", padding: "20px 16px", paddingBottom: 100 }}>
         {/* Auto-save restored toast */}
         {storageRestored && (
           <div style={{ marginBottom: 20, padding: "12px 18px", borderRadius: 10, border: `1px solid ${BLUE}55`, background: BLUE + "12", display: "flex", alignItems: "center", gap: 12 }}>
