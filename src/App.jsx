@@ -553,8 +553,8 @@ function buildNote(d) {
     addIf(kd !== null, `Difference (R-L): ${kd} lbs`);
     addIf(keLSI !== null, `Limb Symmetry Index (${inv} / ${uninv}): ${keLSI}%`);
     if (hasVal(d.tpfR) || hasVal(d.tpfL)) {
-      addIf(hasVal(d.tpfR), `Time to Peak Force - Right: ${d.tpfR} ms`);
-      addIf(hasVal(d.tpfL), `Time to Peak Force - Left: ${d.tpfL} ms`);
+      addIf(hasVal(d.tpfR), `Time to Peak Force - Right: ${d.tpfR} sec`);
+      addIf(hasVal(d.tpfL), `Time to Peak Force - Left: ${d.tpfL} sec`);
       if (hasVal(d.tpfR) && hasVal(d.tpfL)) {
         const tpfAsym = (Math.abs(toNum(d.tpfR) - toNum(d.tpfL)) / Math.max(toNum(d.tpfR), toNum(d.tpfL)) * 100).toFixed(1);
         addIf(true, `Time to Peak Force Asymmetry: ${tpfAsym}%${parseFloat(tpfAsym) <= 10 ? " ✓ Within 10% threshold" : " — Exceeds 10% threshold"}`);
@@ -1128,8 +1128,8 @@ function Tab1({ data: d, setData: setD }) {
           <Field label="Left"  unit="lbs" value={d.keL} onChange={v => { sd("keL", v); sd("forceL", v); }} fieldKey="keL" />
         </R2>
         <R2 mb={8}>
-          <Field label="Time to Peak Force — Right" unit="ms" value={d.tpfR} onChange={v => sd("tpfR", v)} placeholder="—" fieldKey="tpfR" />
-          <Field label="Time to Peak Force — Left"  unit="ms" value={d.tpfL} onChange={v => sd("tpfL", v)} placeholder="—" fieldKey="tpfL" />
+          <Field label="Time to Peak Force — Right" unit="sec" value={d.tpfR} onChange={v => sd("tpfR", v)} placeholder="—" fieldKey="tpfR" />
+          <Field label="Time to Peak Force — Left"  unit="sec" value={d.tpfL} onChange={v => sd("tpfL", v)} placeholder="—" fieldKey="tpfL" />
         </R2>
         {(() => {
           const tpfAsym = (hasVal(d.tpfR) && hasVal(d.tpfL) && toNum(d.tpfR) > 0 && toNum(d.tpfL) > 0)
@@ -3273,7 +3273,7 @@ async function saveSessionPDF(data) {
   // ── Strength ──
   section("Strength Testing");
   row("KE Force — Right:", data.keR ? `${data.keR} lbs` : null, col2, "Left:", data.keL ? `${data.keL} lbs` : null);
-  row("Time to Peak Force — Right:", data.tpfR ? `${data.tpfR} ms` : null, col2, "Left:", data.tpfL ? `${data.tpfL} ms` : null);
+  row("Time to Peak Force — Right:", data.tpfR ? `${data.tpfR} sec` : null, col2, "Left:", data.tpfL ? `${data.tpfL} sec` : null);
   row("Hamstring Force — Right:", data.hsR ? `${data.hsR} lbs` : null, col2, "Left:", data.hsL ? `${data.hsL} lbs` : null);
   row("HHD Force — Right:", data.forceR ? `${data.forceR} lbs` : null, col2, "Left:", data.forceL ? `${data.forceL} lbs` : null);
   divider();
