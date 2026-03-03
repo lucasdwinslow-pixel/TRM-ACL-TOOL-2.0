@@ -3377,7 +3377,8 @@ async function saveSessionPDF(data) {
     return wrapped.length ? wrapped : [""];
   };
 
-  for (const rawLine of noteLines) {
+  for (const rawLinePre of noteLines) {
+    const rawLine = sanitizePdf(rawLinePre);
     if (y2 < 48) {
       // No more room — add continuation note at bottom
       page2.drawText(sanitizePdf("… (continued — see Testing tab for full data)"), { x: L2, y: 36, size: 7, font, color: GRAY });
