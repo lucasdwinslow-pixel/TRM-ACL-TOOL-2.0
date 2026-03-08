@@ -3191,239 +3191,436 @@ async function saveSessionPDF(data) {
   const { PDFDocument, rgb, StandardFonts } = await getPdfLib();
   const doc = await PDFDocument.create();
 
-  // Embed session data in PDF metadata (Subject field)
+  // Embed session data in PDF metadata
   const sessionJson = JSON.stringify(data);
   const encoded = btoa(unescape(encodeURIComponent(sessionJson)));
   doc.setSubject("TRM_SESSION_V1:" + encoded);
   doc.setTitle("TRM ACL Testing Session");
   doc.setCreator("TRM ACL Rehabilitation Testing Tool");
 
-  // ── Build human-readable report page ──
-  const page = doc.addPage([612, 792]); // letter
+  const page = doc.addPage([612, 792]);
   const { width, height } = page.getSize();
   const font     = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  const BLACK_R = rgb(0, 0, 0);
-  const GRAY    = rgb(0.45, 0.45, 0.45);
-  const LGRAY   = rgb(0.85, 0.85, 0.85);
-  const LIME_R  = rgb(0.42, 0.82, 0.12);
-  const ACCENT  = rgb(0.13, 0.55, 0.87);
+  // ── Color Palette ──────────────────────────────────────────────────────
+  const BLACK_R  = rgb(0.05, 0.05, 0.05);
+  const WHITE_R  = rgb(1, 1, 1);
+  const GRAY     = rgb(0.45, 0.45, 0.45);
+  const LGRAY    = rgb(0.82, 0.82, 0.82);
+  const BGRAY    = rgb(0.96, 0.96, 0.96);
+  const DARK_R   = rgb(0.07, 0.07, 0.07);
+  const LIME_R   = rgb(0.42, 0.82, 0.12);
+  const LIME_BG  = rgb(0.90, 0.98, 0.82);
+  const LIME_TXT = rgb(0.18, 0.48, 0.04);
+  const GOLD_R   = rgb(0.90, 0.65, 0.08);
+  const GOLD_BG  = rgb(1.0,  0.95, 0.80);
+  const GOLD_TXT = rgb(0.65, 0.42, 0.02);
+  const RED_R    = rgb(0.88, 0.22, 0.22);
+  const RED_BG   = rgb(1.0,  0.90, 0.90);
+  const RED_TXT  = rgb(0.65, 0.10, 0.10);
+  const BORDER_R = rgb(0.88, 0.88, 0.88);
 
-  let y = height - 48;
-  const L = 48, R = width - 48, col2 = 320;
+  const L = 48, R = width - 48;
+  const CW = R - L;
 
-  // Header bar
-  page.drawRectangle({ x: 0, y: height - 72, width, height: 72, color: rgb(0.05, 0.05, 0.05) });
-  page.drawText(sanitizePdf("TRM"), { x: L, y: height - 44, size: 26, font: fontBold, color: rgb(1,1,1) });
-  page.drawText(sanitizePdf("ACL Testing & Outcome Measures"), { x: L + 60, y: height - 40, size: 11, font, color: rgb(0.6,0.6,0.6) });
+  // ── Pre-compute all derived metrics ──────────────────────────────────
+  const inv  = data.patient?.involvedSide || "Left";
+  const invR = inv === "Right";
+  const uninv = invR ? "Left" : "Right";
+
+  const torRnm_p  = calcTorqueNm(data.forceR, data.tib);
+  const torLnm_p  = calcTorqueNm(data.forceL, data.tib);
+  const normR_p   = calcNorm(torRnm_p, data.bw);
+  const normL_p   = calcNorm(torLnm_p, data.bw);
+  const torLSI_p  = invR ? calcLSI(normR_p, normL_p) : calcLSI(normL_p, normR_p);
+  const keLSI_p   = invR ? calcLSI(data.keR, data.keL) : calcLSI(data.keL, data.keR);
+
+  const hsTorR_p  = calcTorqueNm(data.hsR, data.tib);
+  const hsTorL_p  = calcTorqueNm(data.hsL, data.tib);
+  const hsNormR_p = calcNorm(hsTorR_p, data.bw);
+  const hsNormL_p = calcNorm(hsTorL_p, data.bw);
+  const hsLSI_p   = invR ? calcLSI(hsNormR_p, hsNormL_p) : calcLSI(hsNormL_p, hsNormR_p);
+  const hqRR_p    = (hasVal(hsNormR_p) && hasVal(normR_p) && toNum(normR_p) > 0) ? ((toNum(hsNormR_p)/toNum(normR_p))*100).toFixed(1) : null;
+  const hqRL_p    = (hasVal(hsNormL_p) && hasVal(normL_p) && toNum(normL_p) > 0) ? ((toNum(hsNormL_p)/toNum(normL_p))*100).toFixed(1) : null;
+  const hqInv_p   = invR ? hqRR_p : hqRL_p;
+
+  const yb = data.yBalance || {};
+  const ybCompR_p   = calcYBalance(yb.rAnt, yb.rPM, yb.rPL, data.limbLen);
+  const ybCompL_p   = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, data.limbLen);
+  const ybCompInv_p = invR ? ybCompR_p : ybCompL_p;
+  const antDiff_p   = hasVal(yb.rAnt) && hasVal(yb.lAnt) ? Math.abs(toNum(yb.rAnt) - toNum(yb.lAnt)).toFixed(1) : null;
+
+  const hopSI_p  = hopAvgIn(data.hops.singleI),  hopSU_p  = hopAvgIn(data.hops.singleU);
+  const hopTrI_p = hopAvgIn(data.hops.tripleI),  hopTrU_p = hopAvgIn(data.hops.tripleU);
+  const hopCrI_p = hopAvgIn(data.hops.crossI),   hopCrU_p = hopAvgIn(data.hops.crossU);
+  const hopTmI_p = hopAvgTimed(data.hops.timedI), hopTmU_p = hopAvgTimed(data.hops.timedU);
+  const lsiSingle = calcLSI(hopSI_p,  hopSU_p);
+  const lsiTriple = calcLSI(hopTrI_p, hopTrU_p);
+  const lsiCross  = calcLSI(hopCrI_p, hopCrU_p);
+  const lsiTimed  = calcTimedLSI(hopTmI_p, hopTmU_p);
+
+  // Status helpers — returns color-coded status object or null
+  const lsiStatus = (v) => {
+    const n = parseFloat(v);
+    if (isNaN(n)) return null;
+    if (n >= 90) return { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: ">= 90%  MEETS CRITERIA" };
+    if (n >= 80) return { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: "80-89%  BORDERLINE" };
+    return            { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: "<  80%  BELOW CRITERIA" };
+  };
+  const ybalStatus = (v) => {
+    const n = parseFloat(v);
+    if (isNaN(n)) return null;
+    return n >= 90
+      ? { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: ">= 90%  MEETS CRITERIA" }
+      : { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: "<  90%  BELOW CRITERIA" };
+  };
+  const hqStatus = (v) => {
+    const n = parseFloat(v);
+    if (isNaN(n)) return null;
+    if (n >= 60) return { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: ">= 60%  MEETS CRITERIA" };
+    if (n >= 50) return { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: "50-59%  BORDERLINE" };
+    return            { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: "<  50%  BELOW CRITERIA" };
+  };
+
+  // ── HEADER ─────────────────────────────────────────────────────────────
+  // Dark bar
+  page.drawRectangle({ x: 0, y: height - 70, width, height: 70, color: DARK_R });
+  // Lime accent stripe at bottom of header
+  page.drawRectangle({ x: 0, y: height - 72, width, height: 2, color: LIME_R });
+  // TRM logotype
+  page.drawText(sanitizePdf("TRM"), { x: L, y: height - 48, size: 34, font: fontBold, color: WHITE_R });
+  // Vertical rule
+  page.drawLine({ start: {x: L + 82, y: height - 16}, end: {x: L + 82, y: height - 62}, thickness: 0.8, color: rgb(0.28, 0.28, 0.28) });
+  page.drawText(sanitizePdf("ACL Testing & Outcome Measures"), { x: L + 92, y: height - 34, size: 10, font, color: rgb(0.68, 0.68, 0.68) });
+  page.drawText(sanitizePdf("SESSION REPORT"), { x: L + 92, y: height - 52, size: 8.5, font: fontBold, color: LIME_R });
+
+  // Date + label top-right
   const dateStr = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
-  page.drawText(sanitizePdf(dateStr), { x: R - font.widthOfTextAtSize(dateStr, 10), y: height - 38, size: 10, font, color: rgb(0.5,0.5,0.5) });
-  page.drawText(sanitizePdf("Session Report"), { x: R - fontBold.widthOfTextAtSize("Session Report", 11), y: height - 52, size: 11, font: fontBold, color: LIME_R });
+  page.drawText(sanitizePdf(dateStr), { x: R - font.widthOfTextAtSize(dateStr, 8), y: height - 34, size: 8, font, color: rgb(0.50, 0.50, 0.50) });
+  const refTxt = "Physician Reference";
+  page.drawText(sanitizePdf(refTxt), { x: R - fontBold.widthOfTextAtSize(refTxt, 7.5), y: height - 50, size: 7.5, font: fontBold, color: rgb(0.38, 0.38, 0.38) });
 
-  y = height - 90;
+  // ── PATIENT STRIP ─────────────────────────────────────────────────────
+  const p = data.patient;
+  page.drawRectangle({ x: 0, y: height - 108, width, height: 36, color: BGRAY });
+  page.drawRectangle({ x: 0, y: height - 109, width, height: 1, color: BORDER_R });
+
+  const ptFields = [
+    ["Date",          p.date          || "—"],
+    ["Weeks Post-Op", p.weeksPostOp   ? `${p.weeksPostOp} wks` : "—"],
+    ["Side",          p.involvedSide  || "—"],
+    ["Graft",         p.graftType     || "—"],
+    ["Surgeon",       p.surgeon       ? `Dr. ${p.surgeon}` : "—"],
+    ["Sex",           p.sex           || "—"],
+  ];
+  const ptColW = CW / ptFields.length;
+  ptFields.forEach(([label, val], i) => {
+    const px = L + i * ptColW;
+    page.drawText(sanitizePdf(label.toUpperCase()), { x: px, y: height - 84, size: 5.5, font: fontBold, color: GRAY });
+    const v = val.length > 16 ? val.slice(0, 15) + "." : val;
+    page.drawText(sanitizePdf(v), { x: px, y: height - 97, size: 8.5, font: fontBold, color: BLACK_R });
+  });
+
+  let y = height - 122;
+
+  // ── CLINICAL SNAPSHOT ─────────────────────────────────────────────────
+  // Section header — dark bar matching app card style
+  page.drawRectangle({ x: L - 4, y: y - 1, width: CW + 8, height: 15, color: rgb(0.11, 0.11, 0.11) });
+  page.drawRectangle({ x: L - 4, y: y - 1, width: 3,      height: 15, color: LIME_R });
+  page.drawText(sanitizePdf("CLINICAL SNAPSHOT  —  KEY OUTCOME METRICS"), { x: L + 6, y: y + 3, size: 7.5, font: fontBold, color: LIME_R });
+  y -= 20;
+
+  // Build up to 4 snapshot items (most clinically important)
+  const snapItems = [];
+  if (keLSI_p !== null)        snapItems.push({ label: "KE LSI",        value: keLSI_p,       unit: "%", st: lsiStatus(keLSI_p),       bench: ">= 90% for RTS", note: `${inv} / ${uninv}` });
+  else if (torLSI_p !== null)  snapItems.push({ label: "Quad Index",    value: torLSI_p,      unit: "%", st: lsiStatus(torLSI_p),      bench: ">= 90% for RTS", note: "Isometric torque LSI" });
+  if (hsLSI_p !== null)        snapItems.push({ label: "HS LSI",        value: hsLSI_p,       unit: "%", st: lsiStatus(hsLSI_p),       bench: ">= 90% for RTS", note: `${inv} / ${uninv}` });
+  else if (hqInv_p !== null)   snapItems.push({ label: "H:Q Ratio",     value: hqInv_p,       unit: "%", st: hqStatus(hqInv_p),        bench: ">= 60% benchmark", note: `${inv} (involved)` });
+  if (ybCompInv_p !== null)    snapItems.push({ label: "Y-Balance",     value: ybCompInv_p,   unit: "%", st: ybalStatus(ybCompInv_p),  bench: ">= 90% of LL", note: `${inv} composite` });
+  const hopVals = [lsiSingle, lsiTriple, lsiCross, lsiTimed].filter(v => v !== null).map(parseFloat);
+  if (hopVals.length > 0) {
+    const worst = Math.min(...hopVals).toFixed(1);
+    snapItems.push({ label: "Hop LSI (Min)", value: worst, unit: "%", st: lsiStatus(worst), bench: ">= 90% for RTS", note: "Worst of 4 tests" });
+  }
+
+  const showSnap = snapItems.slice(0, 4);
+  if (showSnap.length > 0) {
+    const boxW = Math.floor(CW / 4) - 3;
+    const boxH = 50;
+    showSnap.forEach((item, i) => {
+      const bx = L + i * (boxW + 4);
+      const dotColor = item.st ? item.st.color : LGRAY;
+      const bgColor  = item.st ? item.st.bg    : BGRAY;
+      const txtColor = item.st ? item.st.txt   : GRAY;
+
+      // Box with colored top & left border accents
+      page.drawRectangle({ x: bx, y: y - boxH, width: boxW, height: boxH, color: bgColor });
+      page.drawRectangle({ x: bx,           y: y,        width: boxW, height: 2, color: dotColor }); // top bar
+      page.drawRectangle({ x: bx,           y: y - boxH, width: 3,    height: boxH, color: dotColor }); // left bar
+
+      // Label
+      page.drawText(sanitizePdf(item.label.toUpperCase()), { x: bx + 8, y: y - 12, size: 6.5, font: fontBold, color: GRAY });
+      // Value (large)
+      page.drawText(sanitizePdf(`${item.value}${item.unit}`), { x: bx + 8, y: y - 29, size: 18, font: fontBold, color: dotColor });
+      // Status label
+      if (item.st) page.drawText(sanitizePdf(item.st.label), { x: bx + 8, y: y - 40, size: 6, font: fontBold, color: txtColor });
+      // Benchmark note
+      page.drawText(sanitizePdf(item.note), { x: bx + 8, y: y - boxH + 5, size: 5.5, font, color: GRAY });
+    });
+    y -= boxH + 10;
+  } else {
+    page.drawText(sanitizePdf("No computed metrics — enter testing data to generate the clinical snapshot."), { x: L, y, size: 8, font, color: GRAY });
+    y -= 16;
+  }
+
+  // Extra snap items (5th+) as a compact text line if they exist
+  const extraSnap = snapItems.slice(4);
+  if (extraSnap.length > 0 && y > 60) {
+    let ex = L;
+    extraSnap.forEach(item => {
+      if (ex > R - 60) return;
+      const dotColor = item.st ? item.st.color : GRAY;
+      const str = `${item.label}: ${item.value}${item.unit}`;
+      page.drawText(sanitizePdf(str), { x: ex, y, size: 8, font: fontBold, color: dotColor });
+      ex += fontBold.widthOfTextAtSize(str, 8) + 6;
+      if (item.st) {
+        page.drawText(sanitizePdf(`(${item.st.label.split("  ")[1]})`), { x: ex, y, size: 7, font, color: GRAY });
+        ex += font.widthOfTextAtSize(`(${item.st.label.split("  ")[1]})`, 7) + 16;
+      }
+    });
+    y -= 14;
+  }
+  y -= 4;
+
+  // ── SECTION & ROW HELPERS ─────────────────────────────────────────────
+  const col2 = L + Math.floor(CW / 2) + 4;
 
   const section = (title) => {
-    if (y < 60) return; // overflow guard
-    y -= 6;
-    page.drawRectangle({ x: L - 4, y: y - 4, width: R - L + 8, height: 18, color: rgb(0.93,0.93,0.93) });
-    page.drawText(sanitizePdf(title.toUpperCase()), { x: L, y: y + 2, size: 8, font: fontBold, color: GRAY });
-    y -= 20;
+    if (y < 60) return;
+    y -= 4;
+    page.drawRectangle({ x: L - 4, y: y - 3, width: CW + 8, height: 14, color: rgb(0.11, 0.11, 0.11) });
+    page.drawRectangle({ x: L - 4, y: y - 3, width: 3,      height: 14, color: LIME_R });
+    page.drawText(sanitizePdf(title.toUpperCase()), { x: L + 5, y: y, size: 7, font: fontBold, color: rgb(0.72, 0.72, 0.72) });
+    y -= 17;
   };
 
   const row = (label, value, x2 = null, label2 = null, value2 = null) => {
-    if (y < 50) return; // overflow guard
-    page.drawText(sanitizePdf(label), { x: L, y, size: 9, font: fontBold, color: BLACK_R });
-    page.drawText(sanitizePdf(String(value || "—")), { x: L + 130, y, size: 9, font, color: value ? BLACK_R : GRAY });
+    if (y < 50) return;
+    page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
+    page.drawText(sanitizePdf(String(value || "—")), { x: L + 138, y, size: 8.5, font, color: value ? BLACK_R : LGRAY });
     if (x2 && label2) {
-      page.drawText(sanitizePdf(label2), { x: x2, y, size: 9, font: fontBold, color: BLACK_R });
-      page.drawText(sanitizePdf(String(value2 || "—")), { x: x2 + 130, y, size: 9, font, color: value2 ? BLACK_R : GRAY });
+      page.drawText(sanitizePdf(label2), { x: x2, y, size: 8.5, font: fontBold, color: BLACK_R });
+      page.drawText(sanitizePdf(String(value2 || "—")), { x: x2 + 138, y, size: 8.5, font, color: value2 ? BLACK_R : LGRAY });
     }
-    y -= 14;
+    y -= 12;
+  };
+
+  // Row with color-coded value + status chip inline
+  const lsiRow = (label, lsiVal, statusFn = lsiStatus, unit = "%") => {
+    if (y < 50) return;
+    const st = statusFn ? statusFn(lsiVal) : null;
+    page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
+    if (lsiVal !== null && lsiVal !== undefined) {
+      const valStr = `${lsiVal}${unit}`;
+      page.drawText(sanitizePdf(valStr), { x: L + 138, y, size: 8.5, font: fontBold, color: st ? st.color : GRAY });
+      if (st) {
+        const chipX = L + 138 + fontBold.widthOfTextAtSize(valStr, 8.5) + 8;
+        const chipLabel = st.label;
+        const chipW = fontBold.widthOfTextAtSize(chipLabel, 5.8) + 8;
+        page.drawRectangle({ x: chipX, y: y - 2, width: chipW, height: 11, color: st.bg });
+        page.drawRectangle({ x: chipX, y: y - 2, width: chipW, height: 1.5, color: st.color });
+        page.drawText(sanitizePdf(chipLabel), { x: chipX + 4, y: y + 1, size: 5.8, font: fontBold, color: st.txt });
+      }
+    } else {
+      page.drawText(sanitizePdf("—"), { x: L + 138, y, size: 8.5, font, color: LGRAY });
+    }
+    y -= 12;
   };
 
   const divider = () => {
-    page.drawLine({ start: { x: L, y }, end: { x: R, y }, thickness: 0.5, color: LGRAY });
+    if (y < 60) return;
+    page.drawLine({ start: {x: L, y}, end: {x: R, y}, thickness: 0.4, color: BORDER_R });
     y -= 8;
   };
 
-  // ── Patient / Session Info ──
-  const p = data.patient;
+  // ── SESSION INFO ──────────────────────────────────────────────────────
   section("Session Information");
-  row("Date of Testing:", p.date, col2, "Surgeon:", p.surgeon);
+  row("Date:", p.date, col2, "Surgeon:", p.surgeon ? `Dr. ${p.surgeon}` : null);
   row("Weeks Post-Op:", p.weeksPostOp ? `${p.weeksPostOp} weeks` : null, col2, "Graft Type:", p.graftType);
-  row("Involved Side:", p.involvedSide, col2, "Biological Sex:", p.sex || null);
   row("Body Weight:", data.bw ? `${data.bw} lbs` : null, col2, "Tibial Length:", data.tib ? `${data.tib} cm` : null);
-  row("Limb Length:", data.limbLen ? `${data.limbLen} cm` : null);
+  row("Limb Length:", data.limbLen ? `${data.limbLen} cm (ASIS-MM)` : null);
   divider();
 
-  // ── ROM ──
-  section("Range of Motion");
-  row("Knee Flexion — Right:", data.flexR ? `${data.flexR}°` : null, col2, "Left:", data.flexL ? `${data.flexL}°` : null);
-  row("Knee Extension — Right:", data.extR ? `${data.extR}°` : null, col2, "Left:", data.extL ? `${data.extL}°` : null);
-  divider();
-
-  // ── Girth ──
-  section("Thigh Girth (cm)");
-  row("5cm above patella — R:", data.girth.r5, col2, "L:", data.girth.l5);
-  row("10cm above patella — R:", data.girth.r10, col2, "L:", data.girth.l10);
-  row("15cm above patella — R:", data.girth.r15, col2, "L:", data.girth.l15);
-  divider();
-
-  // ── Strength ──
-  section("Strength Testing");
-  row("KE Force — Right:", data.keR ? `${data.keR} lbs` : null, col2, "Left:", data.keL ? `${data.keL} lbs` : null);
-  row("Time to Peak Force — Right:", data.tpfR ? `${data.tpfR} sec` : null, col2, "Left:", data.tpfL ? `${data.tpfL} sec` : null);
-  row("Hamstring Force — Right:", data.hsR ? `${data.hsR} lbs` : null, col2, "Left:", data.hsL ? `${data.hsL} lbs` : null);
-  row("HHD Force — Right:", data.forceR ? `${data.forceR} lbs` : null, col2, "Left:", data.forceL ? `${data.forceL} lbs` : null);
-  divider();
-
-  // ── Hop Testing ──
-  section("Hop Testing (averages, inches)");
-  const avgIn = (trials) => {
-    const vals = trials.map(t => (parseFloat(t.ft||0)*12) + parseFloat(t.in||0)).filter(v => v > 0);
-    if (!vals.length) return null;
-    return (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) + '"';
-  };
-  const avgT = (trials) => {
-    const vals = trials.map(t => parseFloat(t)).filter(v => !isNaN(v) && v > 0);
-    if (!vals.length) return null;
-    return (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2) + "s";
-  };
-  row("Single Hop — Involved:", avgIn(data.hops.singleI), col2, "Uninvolved:", avgIn(data.hops.singleU));
-  row("Triple Hop — Involved:", avgIn(data.hops.tripleI), col2, "Uninvolved:", avgIn(data.hops.tripleU));
-  row("Crossover Hop — Involved:", avgIn(data.hops.crossI), col2, "Uninvolved:", avgIn(data.hops.crossU));
-  row("6m Timed — Involved:", avgT(data.hops.timedI), col2, "Uninvolved:", avgT(data.hops.timedU));
-  divider();
-
-  // ── Y-Balance ──
-  section("Y-Balance Test");
-  const yb = data.yBalance || {};
-  row("Anterior — Right:", yb.rAnt, col2, "Left:", yb.lAnt);
-  row("Post-Med — Right:", yb.rPM, col2, "Left:", yb.lPM);
-  row("Post-Lat — Right:", yb.rPL, col2, "Left:", yb.lPL);
-  divider();
-
-  // ── Patient-Reported Outcomes ──
-  if (data.ikdc || data.tampa) {
-    section("Patient-Reported Outcomes");
-    row("IKDC Score:", data.ikdc ? `${data.ikdc}/100` : null, col2, "Tampa Scale (TSK-11):", data.tampa || null);
+  // ── RANGE OF MOTION ───────────────────────────────────────────────────
+  if (hasVal(data.flexR) || hasVal(data.flexL) || hasVal(data.extR) || hasVal(data.extL)) {
+    section("Range of Motion");
+    row("Knee Flexion — Right:", data.flexR ? `${data.flexR} deg` : null, col2, "Left:", data.flexL ? `${data.flexL} deg` : null);
+    row("Knee Extension — Right:", data.extR ? `${data.extR} deg` : null, col2, "Left:", data.extL ? `${data.extL} deg` : null);
+    const fInv = invR ? data.flexR : data.flexL, fUninv = invR ? data.flexL : data.flexR;
+    const fd = calcDiff(fInv, fUninv);
+    if (fd !== null) row(`Flexion Deficit (${inv} vs ${uninv}):`, `${fd} deg`);
     divider();
   }
 
-  // ── Vald Force Platform ──
+  // ── THIGH GIRTH ───────────────────────────────────────────────────────
+  const gTotR_p = [data.girth.r5, data.girth.r10, data.girth.r15].reduce((a,v) => a + toNum(v), 0);
+  const gTotL_p = [data.girth.l5, data.girth.l10, data.girth.l15].reduce((a,v) => a + toNum(v), 0);
+  if (gTotR_p > 0 || gTotL_p > 0) {
+    section("Thigh Girth (cm above patella)");
+    row("5cm — Right:", data.girth.r5 || null, col2, "Left:", data.girth.l5 || null);
+    row("10cm — Right:", data.girth.r10 || null, col2, "Left:", data.girth.l10 || null);
+    row("15cm — Right:", data.girth.r15 || null, col2, "Left:", data.girth.l15 || null);
+    const gBig = Math.max(gTotR_p, gTotL_p), gSmall = Math.min(gTotR_p, gTotL_p);
+    const gPct = gBig > 0 ? (((gBig - gSmall)/gBig)*100).toFixed(1) : null;
+    const gSide = gTotR_p < gTotL_p ? "Right deficit" : gTotL_p < gTotR_p ? "Left deficit" : "Equal";
+    if (gPct !== null) row("Asymmetry:", `${gPct}%  (${gSide})`);
+    divider();
+  }
+
+  // ── STRENGTH TESTING ──────────────────────────────────────────────────
+  const hasStr = hasVal(data.keR) || hasVal(data.keL) || hasVal(data.forceR) || hasVal(data.forceL) || hasVal(data.hsR) || hasVal(data.hsL);
+  if (hasStr) {
+    section("Strength Testing");
+    if (hasVal(data.keR) || hasVal(data.keL)) {
+      row("KE Force — Right:", data.keR ? `${data.keR} lbs` : null, col2, "Left:", data.keL ? `${data.keL} lbs` : null);
+      if (hasVal(data.tpfR) || hasVal(data.tpfL)) row("Time to Peak Force — R:", data.tpfR ? `${data.tpfR} s` : null, col2, "L:", data.tpfL ? `${data.tpfL} s` : null);
+      if (keLSI_p !== null) lsiRow(`KE Limb Symmetry Index (${inv} / ${uninv}):`, keLSI_p);
+    }
+    if (hasVal(data.forceR) || hasVal(data.forceL)) {
+      row("HHD Force — Right:", data.forceR ? `${data.forceR} lbs` : null, col2, "Left:", data.forceL ? `${data.forceL} lbs` : null);
+      if (torRnm_p || torLnm_p) row("Torque at 90 deg — Right:", torRnm_p ? `${torRnm_p} Nm` : null, col2, "Left:", torLnm_p ? `${torLnm_p} Nm` : null);
+      if (normR_p || normL_p)   row("Normalized — Right:", normR_p ? `${normR_p} Nm/kg` : null, col2, "Left:", normL_p ? `${normL_p} Nm/kg` : null);
+      if (torLSI_p !== null)    lsiRow(`Quadriceps Index (${inv} / ${uninv}):`, torLSI_p);
+    }
+    if (hasVal(data.hsR) || hasVal(data.hsL)) {
+      row("Hamstring Force — Right:", data.hsR ? `${data.hsR} lbs` : null, col2, "Left:", data.hsL ? `${data.hsL} lbs` : null);
+      if (hsLSI_p !== null) lsiRow(`Hamstring LSI (${inv} / ${uninv}):`, hsLSI_p);
+      if (hqRR_p || hqRL_p) row("H:Q Ratio — Right:", hqRR_p ? `${hqRR_p}%` : null, col2, "Left:", hqRL_p ? `${hqRL_p}%` : null);
+      if (hqInv_p !== null) lsiRow(`H:Q Ratio — ${inv} (Involved):`, hqInv_p, hqStatus);
+    }
+    divider();
+  }
+
+  // ── HOP TESTING ───────────────────────────────────────────────────────
+  const anyHop = hopSI_p || hopSU_p || hopTrI_p || hopTrU_p || hopCrI_p || hopCrU_p || hopTmI_p || hopTmU_p;
+  if (anyHop) {
+    section("Hop Testing");
+    const hopTests = [
+      ["Single Hop for Distance", hopSI_p,  hopSU_p,  lsiSingle, '"'],
+      ["Triple Hop for Distance", hopTrI_p, hopTrU_p, lsiTriple, '"'],
+      ["Crossover Hop",           hopCrI_p, hopCrU_p, lsiCross,  '"'],
+      ["6m Timed Hop",            hopTmI_p, hopTmU_p, lsiTimed,  "s"],
+    ].filter(([, i, u]) => i || u);
+    hopTests.forEach(([name, invVal, uninvVal, lsiV, unit]) => {
+      row(`${name}:`, invVal ? `${inv}: ${invVal}${unit}` : null, col2, uninvVal ? `${uninv}:` : null, uninvVal ? `${uninvVal}${unit}` : null);
+      if (lsiV !== null) lsiRow(`  LSI:`, lsiV);
+    });
+    divider();
+  }
+
+  // ── Y-BALANCE TEST ────────────────────────────────────────────────────
+  const ybHas = hasVal(yb.rAnt) || hasVal(yb.rPM) || hasVal(yb.rPL) || hasVal(yb.lAnt) || hasVal(yb.lPM) || hasVal(yb.lPL);
+  if (ybHas) {
+    section("Y-Balance Test  (Benchmark: >= 90% of Limb Length)");
+    const ybFmt = (reach, ll) => hasVal(reach) && hasVal(ll) ? `${reach} cm  (${calcYDir(reach, ll)}% LL)` : (hasVal(reach) ? `${reach} cm` : null);
+    row("Anterior — Right:", ybFmt(yb.rAnt, data.limbLen), col2, "Left:", ybFmt(yb.lAnt, data.limbLen));
+    row("Posteromedial — Right:", ybFmt(yb.rPM, data.limbLen), col2, "Left:", ybFmt(yb.lPM, data.limbLen));
+    row("Posterolateral — Right:", ybFmt(yb.rPL, data.limbLen), col2, "Left:", ybFmt(yb.lPL, data.limbLen));
+    if (ybCompR_p !== null) lsiRow("Composite Score — Right:", ybCompR_p, ybalStatus);
+    if (ybCompL_p !== null) lsiRow("Composite Score — Left:", ybCompL_p, ybalStatus);
+    if (antDiff_p !== null && y > 50) {
+      const flagged = parseFloat(antDiff_p) > 4;
+      page.drawText(sanitizePdf("Anterior Side Difference:"), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
+      page.drawText(sanitizePdf(`${antDiff_p} cm`), { x: L + 138, y, size: 8.5, font, color: flagged ? RED_R : BLACK_R });
+      if (flagged) {
+        const fx = L + 138 + font.widthOfTextAtSize(`${antDiff_p} cm`, 8.5) + 6;
+        page.drawText(sanitizePdf("> 4 cm  CLINICALLY SIGNIFICANT"), { x: fx, y, size: 7, font: fontBold, color: RED_R });
+      }
+      y -= 12;
+    }
+    divider();
+  }
+
+  // ── AGILITY ───────────────────────────────────────────────────────────
+  if (hasVal(data.agilityTime)) {
+    section("Pro Agility Test (5-10-5)");
+    row("Best Time:", `${data.agilityTime} sec`);
+    divider();
+  }
+
+  // ── PATIENT-REPORTED OUTCOMES ─────────────────────────────────────────
+  if (hasVal(data.ikdc) || hasVal(data.tampa)) {
+    section("Patient-Reported Outcomes");
+    if (hasVal(data.ikdc)) {
+      const iv = parseFloat(data.ikdc);
+      const ikdcSt = iv >= 95 ? { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: ">= 95  MEETS RTS THRESHOLD" }
+                   : iv >= 80 ? { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: "80-94  APPROACHING" }
+                   :            { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: "<  80  BELOW THRESHOLD" };
+      lsiRow("IKDC Subjective Knee Form:", data.ikdc.toString(), () => ikdcSt, "/100");
+    }
+    if (hasVal(data.tampa)) {
+      const tv = parseFloat(data.tampa);
+      const tampaSt = tv <= 17 ? { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: "<= 17  ACCEPTABLE" }
+                    : tv <= 22 ? { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: "18-22  MILD KINESIO." }
+                    :            { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: ">  22  ELEVATED" };
+      lsiRow("Tampa Scale of Kinesiophobia (TSK-11):", data.tampa.toString(), () => tampaSt, "");
+    }
+    divider();
+  }
+
+  // ── VALD FORCE PLATFORM ───────────────────────────────────────────────
   const valdSections = [
-    { label: "Squat Symmetry (Vald)", v: data.valdSquat || {},
+    { label: "Squat Symmetry — Vald ForceDecks", v: data.valdSquat || {},
       rows: [["LSI", "lsiPct", "%"], ["Peak Force Asym", "peakForceAsym", "%"], ["Peak Force CoV", "peakForceCov", "%"], ["Classification", "classification", ""]] },
-    { label: "CMJ (Vald)", v: data.valdCMJ || {},
-      rows: [["Jump Height", "jumpHeight", "cm"], ["Ecc Braking Asym", "eccBrakingImpAsym", "%"], ["Ecc Braking CoV", "eccBrakingImpCov", "%"], ["Conc Peak Force Asym", "concPeakForceAsym", "%"], ["Modified RSI", "modRSI", ""], ["Classification", "classification", ""]] },
-    { label: "SLDJ (Vald)", v: data.valdSLDJ || {},
-      rows: [["RSI — Involved", "invRSI", ""], ["RSI — Uninvolved", "uninvRSI", ""], ["Ecc Braking Asym", "eccBrakingImpAsym", "%"], ["Conc Peak Force Asym", "concPeakForceAsym", "%"], ["Classification", "classification", ""]] },
+    { label: "CMJ — Vald ForceDecks", v: data.valdCMJ || {},
+      rows: [["Jump Height", "jumpHeight", "cm"], ["Ecc Braking Asym", "eccBrakingImpAsym", "%"], ["Ecc Braking CoV", "eccBrakingImpCov", "%"], ["Conc PF Asym", "concPeakForceAsym", "%"], ["Modified RSI", "modRSI", ""], ["Classification", "classification", ""]] },
+    { label: "Single Leg Drop Jump — Vald ForceDecks", v: data.valdSLDJ || {},
+      rows: [[`RSI ${inv}`, "invRSI", ""], [`RSI ${uninv}`, "uninvRSI", ""], ["Ecc Braking Asym", "eccBrakingImpAsym", "%"], ["Conc PF Asym", "concPeakForceAsym", "%"], ["Classification", "classification", ""]] },
   ].filter(s => Object.values(s.v).some(v => v && v !== ""));
 
   if (valdSections.length > 0) {
     section("Force Platform Testing (Vald ForceDecks)");
     valdSections.forEach(({ label, v, rows }) => {
-      const dataRows = rows.filter(([, key]) => v[key] && v[key] !== "");
-      if (dataRows.length === 0) return;
-      page.drawText(sanitizePdf(label), { x: L, y, size: 8, font: fontBold, color: GRAY });
+      if (y < 50) return;
+      page.drawText(sanitizePdf(label), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
       y -= 13;
-      dataRows.forEach(([lbl, key, unit]) => {
+      rows.forEach(([lbl, key, unit]) => {
+        if (!v[key] || v[key] === "") return;
         row(`  ${lbl}:`, unit ? `${v[key]}${unit}` : v[key]);
       });
     });
     divider();
   }
 
-  // Footer
-  y = 36;
-  page.drawLine({ start: { x: L, y: y + 14 }, end: { x: R, y: y + 14 }, thickness: 0.5, color: LGRAY });
-  page.drawText(sanitizePdf("TRM ACL Rehabilitation Testing Tool  —  This file contains embedded session data. Upload to TRM app to restore."), {
-    x: L, y: y, size: 7, font, color: GRAY
-  });
-
-  // ── PAGE 2: Plain-text SOAP note (copy-paste ready) ──
-  const page2 = doc.addPage([612, 792]);
-  let y2 = page2.getSize().height - 48;
-  const L2 = 48, R2 = page2.getSize().width - 48;
-
-  // Page 2 header bar
-  page2.drawRectangle({ x: 0, y: page2.getSize().height - 56, width: page2.getSize().width, height: 56, color: rgb(0.05,0.05,0.05) });
-  page2.drawText(sanitizePdf("TRM"), { x: L2, y: page2.getSize().height - 34, size: 20, font: fontBold, color: rgb(1,1,1) });
-  page2.drawText(sanitizePdf("Documentation Copy  —  Select All & Paste into EMR"), { x: L2 + 52, y: page2.getSize().height - 32, size: 9, font, color: rgb(0.5,0.5,0.5) });
-  page2.drawText(sanitizePdf("Page 2 of 2"), { x: R2 - fontBold.widthOfTextAtSize("Page 2 of 2", 9), y: page2.getSize().height - 32, size: 9, font, color: rgb(0.4,0.4,0.4) });
-  y2 = page2.getSize().height - 72;
-
-  // Build the note text and render it line by line
-  const noteLines = buildNote(data).split("\n");
-  const maxLineWidth = R2 - L2;
-
-  // Helper: wrap long lines
-  const wrapLine = (text, fnt, size, maxW) => {
-    if (!text) return [""];
-    const words = text.split(" ");
-    const wrapped = [];
-    let cur = "";
-    for (const w of words) {
-      const test = cur ? cur + " " + w : w;
-      if (fnt.widthOfTextAtSize(test, size) <= maxW) {
-        cur = test;
-      } else {
-        if (cur) wrapped.push(cur);
-        cur = w;
-      }
-    }
-    if (cur) wrapped.push(cur);
-    return wrapped.length ? wrapped : [""];
-  };
-
-  for (const rawLinePre of noteLines) {
-    const rawLine = sanitizePdf(rawLinePre);
-    if (y2 < 48) {
-      // No more room — add continuation note at bottom
-      page2.drawText(sanitizePdf("… (continued — see Testing tab for full data)"), { x: L2, y: 36, size: 7, font, color: GRAY });
-      break;
-    }
-
-    if (rawLine === "") {
-      y2 -= 7; // blank line spacer
-      continue;
-    }
-
-    // Section headers (all-caps lines ending with or being headers)
-    const isHeader = rawLine === rawLine.toUpperCase() && rawLine.trim().length > 0 && !rawLine.includes(":") && rawLine.trim().length < 60;
-    const isBullet = rawLine.startsWith("  ");
-
-    if (isHeader) {
-      y2 -= 4;
-      page2.drawRectangle({ x: L2 - 4, y: y2 - 3, width: R2 - L2 + 8, height: 15, color: rgb(0.91,0.91,0.91) });
-      page2.drawText(sanitizePdf(rawLine.trim()), { x: L2, y: y2, size: 8, font: fontBold, color: GRAY });
-      y2 -= 18;
-    } else {
-      const fSize = 9;
-      const xOffset = isBullet ? L2 + 10 : L2;
-      const wrapped = wrapLine(rawLine.trim(), font, fSize, maxLineWidth - (isBullet ? 10 : 0));
-      for (const wl of wrapped) {
-        if (y2 < 48) break;
-        page2.drawText(sanitizePdf(wl), { x: xOffset, y: y2, size: fSize, font, color: BLACK_R });
-        y2 -= 13;
-      }
-    }
+  // ── INTERPRETATION LEGEND ─────────────────────────────────────────────
+  const legendY = Math.min(y - 4, 70);
+  if (legendY > 36) {
+    page.drawLine({ start: {x: L, y: legendY + 14}, end: {x: R, y: legendY + 14}, thickness: 0.4, color: BORDER_R });
+    page.drawText(sanitizePdf("INTERPRETATION:"), { x: L, y: legendY + 2, size: 6.5, font: fontBold, color: GRAY });
+    const lgItems = [
+      { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, text: ">= 90% — Meets RTS criteria" },
+      { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, text: "80-89% — Borderline" },
+      { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  text: "< 80%  — Below criteria" },
+    ];
+    let lx = L + fontBold.widthOfTextAtSize("INTERPRETATION:", 6.5) + 14;
+    lgItems.forEach(({ color, bg, text }) => {
+      page.drawRectangle({ x: lx, y: legendY, width: 8, height: 8, color: bg });
+      page.drawRectangle({ x: lx, y: legendY + 6, width: 8, height: 2, color: color });
+      page.drawText(sanitizePdf(text), { x: lx + 11, y: legendY + 1, size: 6.5, font, color: GRAY });
+      lx += 11 + font.widthOfTextAtSize(text, 6.5) + 18;
+    });
   }
 
-  // Page 2 footer
-  page2.drawLine({ start: { x: L2, y: 48 }, end: { x: R2, y: 48 }, thickness: 0.5, color: LGRAY });
-  page2.drawText(sanitizePdf("TRM Documentation Copy  —  Plain text for EMR entry. Open in any PDF viewer, select all text on this page, and paste."), {
-    x: L2, y: 36, size: 7, font, color: GRAY
+  // ── FOOTER ────────────────────────────────────────────────────────────
+  page.drawRectangle({ x: 0, y: 0, width, height: 26, color: DARK_R });
+  page.drawRectangle({ x: 0, y: 26, width, height: 1.5, color: LIME_R });
+  page.drawText(sanitizePdf("TRM  |  ACL Rehabilitation Testing Tool  —  Session data embedded. Upload to TRM app to restore."), {
+    x: L, y: 8, size: 6.5, font, color: rgb(0.44, 0.44, 0.44)
   });
+  page.drawText(sanitizePdf("Page 1 of 1"), { x: R - font.widthOfTextAtSize("Page 1 of 1", 6.5), y: 8, size: 6.5, font, color: rgb(0.38, 0.38, 0.38) });
 
-
-  // Download — iOS Safari ignores the `download` attribute on blob URLs and blocks
-  // programmatic anchor clicks that happen outside a direct user gesture.
-  // Strategy: detect iOS and open the blob URL in a new tab (Safari will show a
-  // share sheet from which the user can save to Files). On all other browsers we
-  // use the standard hidden-anchor click but delay revocation so the browser
-  // has time to start the download first.
+  // ── DOWNLOAD ──────────────────────────────────────────────────────────
   const pdfBytes = await doc.save();
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
   const url  = URL.createObjectURL(blob);
@@ -3432,9 +3629,7 @@ async function saveSessionPDF(data) {
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
   if (isIOS) {
-    // On iOS, open blob URL in new tab — user taps share icon → Save to Files
     window.open(url, "_blank");
-    // Revoke after a generous delay so the new tab can load the PDF
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   } else {
     const a = document.createElement("a");
@@ -3443,7 +3638,6 @@ async function saveSessionPDF(data) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // Delay revocation so download has time to start
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 }
