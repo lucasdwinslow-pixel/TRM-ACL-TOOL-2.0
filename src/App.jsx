@@ -3195,10 +3195,11 @@ async function saveSessionPDF(data) {
   const sessionJson = JSON.stringify(data);
   const encoded = btoa(unescape(encodeURIComponent(sessionJson)));
   doc.setSubject("TRM_SESSION_V1:" + encoded);
+  doc.setKeywords("TRM_SESSION_V1:" + encoded); // Backup — some PDF viewers strip Subject; Keywords survives
   doc.setTitle("TRM ACL Testing Session");
   doc.setCreator("TRM ACL Rehabilitation Testing Tool");
 
-  const page = doc.addPage([612, 792]);
+  let page = doc.addPage([612, 792]);
   const { width, height } = page.getSize();
   const font     = await doc.embedFont(StandardFonts.Helvetica);
   const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -3323,6 +3324,37 @@ async function saveSessionPDF(data) {
   });
 
   let y = height - 122;
+  let pageCount = 1;
+
+  // Called automatically when content is about to overflow the page bottom.
+  // Draws a footer on the current page, starts a new page, and draws a continuation header.
+  const addNewPage = () => {
+    // Footer on the page we're leaving
+    page.drawRectangle({ x: 0, y: 0, width, height: 26, color: DARK_R });
+    page.drawRectangle({ x: 0, y: 26, width, height: 1.5, color: LIME_R });
+    page.drawText(sanitizePdf("TRM  |  ACL Rehabilitation Testing Tool  —  Session data embedded. Upload to TRM app to restore."), {
+      x: L, y: 8, size: 6.5, font, color: rgb(0.44, 0.44, 0.44)
+    });
+    page.drawText(sanitizePdf(`Page ${pageCount}`), {
+      x: R - font.widthOfTextAtSize(`Page ${pageCount}`, 6.5), y: 8, size: 6.5, font, color: rgb(0.38, 0.38, 0.38)
+    });
+    // New page
+    pageCount++;
+    page = doc.addPage([612, 792]);
+    // Continuation header — compact dark bar
+    page.drawRectangle({ x: 0, y: height - 32, width, height: 32, color: DARK_R });
+    page.drawRectangle({ x: 0, y: height - 34, width, height: 2, color: LIME_R });
+    page.drawText(sanitizePdf("TRM  |  ACL Testing & Outcome Measures  —  continued"), {
+      x: L, y: height - 22, size: 8.5, font: fontBold, color: rgb(0.72, 0.72, 0.72)
+    });
+    const ptCont = `${data.patient?.date || ""}${data.patient?.weeksPostOp ? "  \u2022  Wk " + data.patient.weeksPostOp : ""}${data.patient?.involvedSide ? "  \u2022  " + data.patient.involvedSide + " side" : ""}`;
+    if (ptCont.trim()) {
+      page.drawText(sanitizePdf(ptCont.trim()), {
+        x: R - font.widthOfTextAtSize(ptCont.trim(), 7), y: height - 22, size: 7, font, color: rgb(0.50, 0.50, 0.50)
+      });
+    }
+    y = height - 52;
+  };
 
   // ── CLINICAL SNAPSHOT ─────────────────────────────────────────────────
   // Section header — dark bar matching app card style
@@ -3397,7 +3429,7 @@ async function saveSessionPDF(data) {
   const col2 = L + Math.floor(CW / 2) + 4;
 
   const section = (title) => {
-    if (y < 60) return;
+    if (y < 90) addNewPage(); // need room for header + at least one row
     y -= 4;
     page.drawRectangle({ x: L - 4, y: y - 3, width: CW + 8, height: 14, color: rgb(0.11, 0.11, 0.11) });
     page.drawRectangle({ x: L - 4, y: y - 3, width: 3,      height: 14, color: LIME_R });
@@ -3406,7 +3438,7 @@ async function saveSessionPDF(data) {
   };
 
   const row = (label, value, x2 = null, label2 = null, value2 = null) => {
-    if (y < 50) return;
+    if (y < 60) addNewPage();
     page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
     page.drawText(sanitizePdf(String(value || "—")), { x: L + 138, y, size: 8.5, font, color: value ? BLACK_R : LGRAY });
     if (x2 && label2) {
@@ -3418,7 +3450,7 @@ async function saveSessionPDF(data) {
 
   // Row with color-coded value + status chip inline
   const lsiRow = (label, lsiVal, statusFn = lsiStatus, unit = "%") => {
-    if (y < 50) return;
+    if (y < 60) addNewPage();
     const st = statusFn ? statusFn(lsiVal) : null;
     page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
     if (lsiVal !== null && lsiVal !== undefined) {
@@ -3439,7 +3471,7 @@ async function saveSessionPDF(data) {
   };
 
   const divider = () => {
-    if (y < 60) return;
+    if (y < 70) { addNewPage(); return; }
     page.drawLine({ start: {x: L, y}, end: {x: R, y}, thickness: 0.4, color: BORDER_R });
     y -= 8;
   };
@@ -3529,7 +3561,8 @@ async function saveSessionPDF(data) {
     row("Posterolateral — Right:", ybFmt(yb.rPL, data.limbLen), col2, "Left:", ybFmt(yb.lPL, data.limbLen));
     if (ybCompR_p !== null) lsiRow("Composite Score — Right:", ybCompR_p, ybalStatus);
     if (ybCompL_p !== null) lsiRow("Composite Score — Left:", ybCompL_p, ybalStatus);
-    if (antDiff_p !== null && y > 50) {
+    if (antDiff_p !== null) {
+      if (y < 60) addNewPage();
       const flagged = parseFloat(antDiff_p) > 4;
       page.drawText(sanitizePdf("Anterior Side Difference:"), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
       page.drawText(sanitizePdf(`${antDiff_p} cm`), { x: L + 138, y, size: 8.5, font, color: flagged ? RED_R : BLACK_R });
@@ -3582,7 +3615,7 @@ async function saveSessionPDF(data) {
   if (valdSections.length > 0) {
     section("Force Platform Testing (Vald ForceDecks)");
     valdSections.forEach(({ label, v, rows }) => {
-      if (y < 50) return;
+      if (y < 80) addNewPage();
       page.drawText(sanitizePdf(label), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
       y -= 13;
       rows.forEach(([lbl, key, unit]) => {
@@ -3618,7 +3651,7 @@ async function saveSessionPDF(data) {
   page.drawText(sanitizePdf("TRM  |  ACL Rehabilitation Testing Tool  —  Session data embedded. Upload to TRM app to restore."), {
     x: L, y: 8, size: 6.5, font, color: rgb(0.44, 0.44, 0.44)
   });
-  page.drawText(sanitizePdf("Page 1 of 1"), { x: R - font.widthOfTextAtSize("Page 1 of 1", 6.5), y: 8, size: 6.5, font, color: rgb(0.38, 0.38, 0.38) });
+  page.drawText(sanitizePdf(`Page ${pageCount} of ${pageCount}`), { x: R - font.widthOfTextAtSize(`Page ${pageCount} of ${pageCount}`, 6.5), y: 8, size: 6.5, font, color: rgb(0.38, 0.38, 0.38) });
 
   // ── DOWNLOAD ──────────────────────────────────────────────────────────
   const pdfBytes = await doc.save();
@@ -3646,18 +3679,37 @@ async function loadSessionPDF(file, onData, onError) {
   try {
     const { PDFDocument } = await getPdfLib();
     const arrayBuffer = await file.arrayBuffer();
-    const doc = await PDFDocument.load(arrayBuffer);
-    const subject = doc.getSubject();
-    if (!subject || !subject.startsWith("TRM_SESSION_V1:")) {
-      onError("This PDF doesn't contain TRM session data. Make sure you're uploading a PDF saved from this app.");
+    const doc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+
+    // Try multiple metadata locations. Some PDF viewers (iOS PDFKit, Preview, Adobe)
+    // silently strip the /Info dictionary on re-save. We write to both Subject and
+    // Keywords on save, so we try each in turn before giving up.
+    let encoded = null;
+    const PREFIX = "TRM_SESSION_V1:";
+
+    const subject = doc.getSubject() || "";
+    if (subject.startsWith(PREFIX)) encoded = subject.slice(PREFIX.length);
+
+    if (!encoded) {
+      const keywords = doc.getKeywords() || "";
+      if (keywords.startsWith(PREFIX)) encoded = keywords.slice(PREFIX.length);
+    }
+
+    if (!encoded) {
+      onError(
+        "This PDF does not contain TRM session data. " +
+        "Make sure you are uploading a PDF saved directly from the TRM app " +
+        "(not a print-to-PDF, screenshot, or file re-saved by another viewer). " +
+        "PDFs from older app versions that predate this format cannot be restored."
+      );
       return;
     }
-    const encoded = subject.replace("TRM_SESSION_V1:", "");
+
     const json = decodeURIComponent(escape(atob(encoded)));
     const sessionData = JSON.parse(json);
     onData(sessionData);
   } catch (e) {
-    onError("Could not read session data from this PDF. The file may be corrupted or from an incompatible version.");
+    onError("Could not read session data from this PDF. The file may be corrupted or was re-saved by an external PDF viewer which stripped the embedded data. (" + e.message + ")");
   }
 }
 
