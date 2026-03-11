@@ -3192,7 +3192,7 @@ function sanitizePdf(str) {
     .replace(/[^\x00-\xFF]/g, "?"); // catch-all for any other non-Latin-1 chars
 }
 
-async function saveSessionPDF(data) {
+async function saveSessionPDF(data, preOpened = null) {
   const { PDFDocument, rgb, StandardFonts } = await getPdfLib();
   const doc = await PDFDocument.create();
 
@@ -3695,11 +3695,16 @@ async function saveSessionPDF(data) {
     return "downloaded";
   }
 
-  // FALLBACK B: Old iOS Safari (< v15, no file share support).
-  // iOS Safari ignores the 'download' attribute on blob URLs, so anchor-click
-  // just opens the PDF in the same tab. Instead we open it in a new tab so the
-  // user can tap the Share icon in Safari's toolbar to "Save to Files".
-  window.open(url, "_blank");
+  // FALLBACK B: iOS (Safari < v15, or Chrome iOS which doesn't support file-based Web Share).
+  // iOS ignores the 'download' attribute on blob URLs. We use the pre-opened window
+  // (opened synchronously in handleSave before any await, so Chrome's popup blocker
+  // doesn't kill it), then navigate it to the blob URL. On old Safari (no preOpened),
+  // fall back to window.open() — the user can then save via the share toolbar.
+  if (preOpened) {
+    preOpened.location.href = url;
+  } else {
+    window.open(url, "_blank");
+  }
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   return "ios-fallback";
 }
@@ -3899,11 +3904,19 @@ export default function App() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const result = await saveSessionPDF(data);
-      // Old iOS Safari (< 15) can't trigger a direct download — the PDF opens
-      // in a new tab instead. Guide the user to save from Safari's toolbar.
+      // Chrome on iOS blocks window.open() when called after await (async popup rules).
+      // Work-around: open the window synchronously HERE — before any async work —
+      // then saveSessionPDF will navigate it to the blob URL once the PDF is ready.
+      // We detect Chrome iOS by the "CriOS" token in the user-agent string.
+      const isChromeIOS = /CriOS/.test(navigator.userAgent);
+      const preOpened = isChromeIOS ? window.open("", "_blank") : null;
+
+      const result = await saveSessionPDF(data, preOpened);
+
+      // Fallback: old iOS Safari (< 15) or Chrome iOS — PDF opens in a new tab.
+      // Guide the user to save from the browser toolbar.
       if (result === "ios-fallback") {
-        setLoadMsg({ type: "success", text: "PDF opened in a new tab — tap the Share icon (⬆) in Safari's toolbar, then "Save to Files" to save it." });
+        setLoadMsg({ type: "success", text: "PDF opened in a new tab — tap the Share icon (⬆) in your browser toolbar, then \"Save to Files\" to save it." });
         setTimeout(() => setLoadMsg(null), 12000);
       }
     } catch(e) {
