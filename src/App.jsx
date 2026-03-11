@@ -3200,7 +3200,7 @@ async function saveSessionPDF(data) {
   const sessionJson = JSON.stringify(data);
   const encoded = btoa(unescape(encodeURIComponent(sessionJson)));
   doc.setSubject("TRM_SESSION_V1:" + encoded);
-  doc.setKeywords("TRM_SESSION_V1:" + encoded); // Backup — some PDF viewers strip Subject; Keywords survives
+  doc.setKeywords(["TRM_SESSION_V1:" + encoded]); // Backup — some PDF viewers strip Subject; Keywords survives
   doc.setTitle("TRM ACL Testing Session");
   doc.setCreator("TRM ACL Rehabilitation Testing Tool");
 
