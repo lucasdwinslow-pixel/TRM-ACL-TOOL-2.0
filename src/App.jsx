@@ -58,7 +58,9 @@ const calcNorm = (nm, bwLbs) => {
 // Each direction pct = reach / limbLen * 100
 const calcYBalance = (ant, pm, pl, limbLen) => {
   if (!hasVal(limbLen) || toNum(limbLen) === 0) return null;
-  if (!hasVal(ant) && !hasVal(pm) && !hasVal(pl)) return null;
+  // Require all three directions — missing ones would be treated as 0,
+  // which silently deflates the composite and produces a misleading result.
+  if (!hasVal(ant) || !hasVal(pm) || !hasVal(pl)) return null;
   const ll = toNum(limbLen);
   const composite = (toNum(ant) + toNum(pm) + toNum(pl)) / (ll * 3) * 100;
   return composite.toFixed(1);
@@ -3092,13 +3094,16 @@ function Tab3({ currentData: d }) {
 
 
 // ─── TAB 4: PHYSICIAN LETTER ──────────────────────────────────────────────────
-function Tab4({ currentData: d }) {
+function Tab4({ currentData: d, setData }) {
   const [ptName,       setPtName]     = useState("");
   const [therapistName,setTherapist]  = useState("");
   const [clinic,       setClinic]     = useState("Train Recover Move");
-  const [impression,   setImpression] = useState("");
   const [letter,       setLetter]     = useState("");
   const [copied,       setCopied]     = useState(false);
+
+  // impression is stored in data so it persists across PDF save/load and autosave
+  const impression = d.impression || "";
+  const setImpression = (v) => setData(p => ({ ...p, impression: v }));
 
   const generate = () => setLetter(buildLetter(d, ptName, therapistName, clinic, impression));
   const copy = () => {
@@ -3691,7 +3696,10 @@ async function loadSessionPDF(file, onData, onError) {
     if (subject.startsWith(PREFIX)) encoded = subject.slice(PREFIX.length);
 
     if (!encoded) {
-      const keywords = doc.getKeywords() || "";
+      const rawKeywords = doc.getKeywords() || "";
+      // pdf-lib returns an Array when keywords were set via setKeywords([...]),
+      // but older saves stored a plain string — handle both gracefully.
+      const keywords = Array.isArray(rawKeywords) ? (rawKeywords[0] || "") : rawKeywords;
       if (keywords.startsWith(PREFIX)) encoded = keywords.slice(PREFIX.length);
     }
 
@@ -3706,7 +3714,20 @@ async function loadSessionPDF(file, onData, onError) {
     }
 
     const json = decodeURIComponent(escape(atob(encoded)));
-    const sessionData = JSON.parse(json);
+    const raw = JSON.parse(json);
+    // Deep-merge with BLANK_DATA so any fields added after the PDF was saved
+    // are always present (prevents crashes when new keys are accessed).
+    const sessionData = {
+      ...BLANK_DATA,
+      ...raw,
+      patient: { ...BLANK_DATA.patient, ...(raw.patient || {}) },
+      girth:   { ...BLANK_DATA.girth,   ...(raw.girth   || {}) },
+      hops:    { ...BLANK_DATA.hops,    ...(raw.hops    || {}) },
+      yBalance:{ ...BLANK_DATA.yBalance,...(raw.yBalance|| {}) },
+      valdSquat:{ ...BLANK_DATA.valdSquat,...(raw.valdSquat || {}) },
+      valdCMJ:  { ...BLANK_DATA.valdCMJ,  ...(raw.valdCMJ  || {}) },
+      valdSLDJ: { ...BLANK_DATA.valdSLDJ, ...(raw.valdSLDJ || {}) },
+    };
     onData(sessionData);
   } catch (e) {
     onError("Could not read session data from this PDF. The file may be corrupted or was re-saved by an external PDF viewer which stripped the embedded data. (" + e.message + ")");
@@ -3736,6 +3757,7 @@ const BLANK_DATA = {
   },
   agilityTime: "",
   noteText: "",
+  impression: "",
 };
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
@@ -4003,7 +4025,7 @@ export default function App() {
         {activeTab === 0 && <Tab1 data={data} setData={setData} />}
         {activeTab === 1 && <Tab2 currentData={data} sessions={sessions} setSessions={setSessions} onAddSession={() => compareInputRef.current.click()} />}
         {activeTab === 2 && <Tab3 currentData={data} />}
-        {activeTab === 3 && <Tab4 currentData={data} />}
+        {activeTab === 3 && <Tab4 currentData={data} setData={setData} />}
       </div>
 
       <div style={{ borderTop: `1px solid ${BORDER}`, padding: "16px 20px", textAlign: "center" }}>
