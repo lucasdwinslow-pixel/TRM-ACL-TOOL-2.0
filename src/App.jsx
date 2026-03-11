@@ -3660,24 +3660,48 @@ async function saveSessionPDF(data) {
 
   // ── DOWNLOAD ──────────────────────────────────────────────────────────
   const pdfBytes = await doc.save();
+  const filename = `TRM_Session_${new Date().toISOString().slice(0,10)}.pdf`;
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
-  const url  = URL.createObjectURL(blob);
 
+  // PRIMARY: Web Share API with file support.
+  // Works in Chrome iOS, Chrome Android, and Safari iOS 15+.
+  // Shows the native OS share sheet (Save to Files, AirDrop, email, etc.).
+  // We deliberately avoid window.open() — Chrome on iOS blocks it as a popup
+  // when called after async/await, causing the PDF to flash and disappear.
+  const shareFile = new File([blob], filename, { type: "application/pdf" });
+  if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+    try {
+      await navigator.share({ files: [shareFile], title: "TRM Session PDF" });
+    } catch (err) {
+      // AbortError = user dismissed the share sheet — not an error, do nothing.
+      if (err.name !== "AbortError") throw err;
+    }
+    return "shared";
+  }
+
+  // FALLBACK A: Desktop Chrome/Firefox — standard anchor-click download.
+  // The 'download' attribute works reliably on blob URLs in these browsers.
+  const url = URL.createObjectURL(blob);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
-  if (isIOS) {
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
-  } else {
+  if (!isIOS) {
     const a = document.createElement("a");
     a.href = url;
-    a.download = `TRM_Session_${new Date().toISOString().slice(0,10)}.pdf`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
+    return "downloaded";
   }
+
+  // FALLBACK B: Old iOS Safari (< v15, no file share support).
+  // iOS Safari ignores the 'download' attribute on blob URLs, so anchor-click
+  // just opens the PDF in the same tab. Instead we open it in a new tab so the
+  // user can tap the Share icon in Safari's toolbar to "Save to Files".
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return "ios-fallback";
 }
 
 async function loadSessionPDF(file, onData, onError) {
@@ -3875,12 +3899,12 @@ export default function App() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveSessionPDF(data);
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      if (isIOS) {
-        setLoadMsg({ type: "success", text: "PDF opened — tap the Share icon (box with arrow) then \"Save to Files\" to save it." });
-        setTimeout(() => setLoadMsg(null), 10000);
+      const result = await saveSessionPDF(data);
+      // Old iOS Safari (< 15) can't trigger a direct download — the PDF opens
+      // in a new tab instead. Guide the user to save from Safari's toolbar.
+      if (result === "ios-fallback") {
+        setLoadMsg({ type: "success", text: "PDF opened in a new tab — tap the Share icon (⬆) in Safari's toolbar, then "Save to Files" to save it." });
+        setTimeout(() => setLoadMsg(null), 12000);
       }
     } catch(e) {
       setLoadMsg({type:"error", text:"Save failed: " + e.message});
