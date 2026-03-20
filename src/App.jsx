@@ -3679,19 +3679,23 @@ async function saveSessionPDF(data, preOpened = null) {
     return "shared";
   }
 
-  // FALLBACK A: Desktop Chrome/Firefox — standard anchor-click download.
-  // The 'download' attribute works reliably on blob URLs in these browsers.
+  // FALLBACK A: Desktop (Safari, Chrome, Firefox) — open PDF in new tab for viewing
+  // AND trigger a download prompt so the user has both options simultaneously.
+  // Blob URL timeout extended to 30s to give the new tab time to fully load the PDF.
   const url = URL.createObjectURL(blob);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (!isIOS) {
+    // Open in new tab — user can view and save via browser PDF toolbar
+    window.open(url, "_blank");
+    // Also trigger download prompt — gives a direct save-to-disk option
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
     return "downloaded";
   }
 
