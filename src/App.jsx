@@ -604,10 +604,6 @@ function buildNote(d) {
       fields: ["jumpHeight","eccBrakingImpAsym","eccBrakingImpCov","concPeakForceAsym","concPeakForceCov","modRSI","classification","clinicalNote"],
       labels: { jumpHeight:"Jump Height (impulse-derived)", eccBrakingImpAsym:"Max Eccentric Braking Impulse Asymmetry", eccBrakingImpCov:"Eccentric Braking Impulse CoV", concPeakForceAsym:"Max Concentric Peak Force Asymmetry", concPeakForceCov:"Concentric Peak Force CoV", modRSI:"Modified RSI", classification:"Classification", clinicalNote:"Clinical Note" },
       units:  { jumpHeight:"cm", eccBrakingImpAsym:"%", eccBrakingImpCov:"%", concPeakForceAsym:"%", concPeakForceCov:"%", modRSI:"" } },
-    { key: "valdSLDJ", title: "SINGLE LEG DROP JUMP - VALD FORCEDECKS",
-      fields: ["invRSI","uninvRSI","eccBrakingImpAsym","eccBrakingImpCov","concPeakForceAsym","concPeakForceCov","classification","clinicalNote"],
-      labels: { invRSI:`RSI - ${inv}`, uninvRSI:`RSI - ${uninv}`, eccBrakingImpAsym:"Max Eccentric Braking Impulse Asymmetry", eccBrakingImpCov:"Eccentric Braking Impulse CoV", concPeakForceAsym:"Max Concentric Peak Force Asymmetry", concPeakForceCov:"Concentric Peak Force CoV", classification:"Classification", clinicalNote:"Clinical Note" },
-      units:  { invRSI:"", uninvRSI:"", eccBrakingImpAsym:"%", eccBrakingImpCov:"%", concPeakForceAsym:"%", concPeakForceCov:"%" } },
   ];
 
   valdMeta.forEach(({ key, title, fields, labels, units }) => {
@@ -621,6 +617,31 @@ function buildNote(d) {
     });
     br();
   });
+
+  // SL Land and Hold
+  const slh = d.slLandHold || {};
+  if (hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce) || hasVal(slh.rTTS) || hasVal(slh.lTTS)) {
+    add("SINGLE LEG LAND AND HOLD");
+    if (hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce)) {
+      add("Peak Landing Force:");
+      addIf(hasVal(slh.rPeakForce), `  Right: ${slh.rPeakForce} N`);
+      addIf(hasVal(slh.lPeakForce), `  Left:  ${slh.lPeakForce} N`);
+      if (hasVal(slh.rPeakForce) && hasVal(slh.lPeakForce) && Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce)) > 0) {
+        const fa = ((Math.abs(toNum(slh.rPeakForce) - toNum(slh.lPeakForce)) / Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce))) * 100).toFixed(1);
+        add(`  Force Asymmetry: ${fa}%${parseFloat(fa) <= 10 ? " -- Within 10% threshold" : parseFloat(fa) <= 15 ? " -- Borderline" : " -- Exceeds threshold"}`);
+      }
+    }
+    if (hasVal(slh.rTTS) || hasVal(slh.lTTS)) {
+      add("Time to Stabilization:");
+      addIf(hasVal(slh.rTTS), `  Right: ${slh.rTTS} sec`);
+      addIf(hasVal(slh.lTTS), `  Left:  ${slh.lTTS} sec`);
+      if (hasVal(slh.rTTS) && hasVal(slh.lTTS) && Math.max(toNum(slh.rTTS), toNum(slh.lTTS)) > 0) {
+        const ta = ((Math.abs(toNum(slh.rTTS) - toNum(slh.lTTS)) / Math.max(toNum(slh.rTTS), toNum(slh.lTTS))) * 100).toFixed(1);
+        add(`  TTS Asymmetry: ${ta}%${parseFloat(ta) <= 10 ? " -- Within 10% threshold" : parseFloat(ta) <= 15 ? " -- Borderline" : " -- Exceeds threshold"}`);
+      }
+    }
+    br();
+  }
 
   // Y-Balance
   const ybHas = hasVal(yb.rAnt) || hasVal(yb.rPM) || hasVal(yb.rPL) || hasVal(yb.lAnt) || hasVal(yb.lPM) || hasVal(yb.lPL);
@@ -817,8 +838,6 @@ function buildLetter(d, ptName, therapistName, clinic, impression) {
       show: (v) => { let s = `${v.classification ? v.classification + ". " : ""}${v.peakForceAsym ? `Peak force asymmetry ${v.peakForceAsym}%. ` : ""}${v.peakForceCov ? `Peak force CoV ${v.peakForceCov}%. ` : ""}${v.clinicalNote || ""}`; return s.trim(); } },
     { k: "valdCMJ", name: "Countermovement Jump",
       show: (v) => { let s = `${v.jumpHeight ? `Jump height ${v.jumpHeight} cm. ` : ""}${v.eccBrakingImpAsym ? `Eccentric braking impulse asymmetry ${v.eccBrakingImpAsym}%. ` : ""}${v.concPeakForceAsym ? `Concentric peak force asymmetry ${v.concPeakForceAsym}%. ` : ""}${v.modRSI ? `Modified RSI ${v.modRSI}. ` : ""}${v.classification ? v.classification + ". " : ""}${v.clinicalNote || ""}`; return s.trim(); } },
-    { k: "valdSLDJ", name: "Single Leg Drop Jump",
-      show: (v) => { let s = `${v.invRSI ? `RSI - Involved: ${v.invRSI}. ` : ""}${v.uninvRSI ? `RSI - Uninvolved: ${v.uninvRSI}. ` : ""}${v.eccBrakingImpAsym ? `Eccentric braking impulse asymmetry ${v.eccBrakingImpAsym}%. ` : ""}${v.concPeakForceAsym ? `Concentric peak force asymmetry ${v.concPeakForceAsym}%. ` : ""}${v.classification ? v.classification + ". " : ""}${v.clinicalNote || ""}`; return s.trim(); } },
   ].filter(({ k }) => Object.values(d[k] || {}).some(v => v && v !== ""));
 
   if (valdSect.length > 0) {
@@ -827,6 +846,29 @@ function buildLetter(d, ptName, therapistName, clinic, impression) {
       const summary = show(d[k] || {});
       if (summary) add(`${name}: ${summary}`);
     });
+    br();
+  }
+
+  // SL Land and Hold
+  const slhN = d.slLandHold || {};
+  if (hasVal(slhN.rPeakForce) || hasVal(slhN.lPeakForce) || hasVal(slhN.rTTS) || hasVal(slhN.lTTS)) {
+    add("SINGLE LEG LAND AND HOLD");
+    const slhParts = [];
+    if (hasVal(slhN.rPeakForce) && hasVal(slhN.lPeakForce)) {
+      const fa = ((Math.abs(toNum(slhN.rPeakForce) - toNum(slhN.lPeakForce)) / Math.max(toNum(slhN.rPeakForce), toNum(slhN.lPeakForce))) * 100).toFixed(1);
+      slhParts.push(`Peak landing force R: ${slhN.rPeakForce} N / L: ${slhN.lPeakForce} N (${fa}% asymmetry — ${parseFloat(fa) <= 10 ? "within" : "exceeds"} 10% threshold)`);
+    } else {
+      if (hasVal(slhN.rPeakForce)) slhParts.push(`Peak landing force R: ${slhN.rPeakForce} N`);
+      if (hasVal(slhN.lPeakForce)) slhParts.push(`Peak landing force L: ${slhN.lPeakForce} N`);
+    }
+    if (hasVal(slhN.rTTS) && hasVal(slhN.lTTS)) {
+      const ta = ((Math.abs(toNum(slhN.rTTS) - toNum(slhN.lTTS)) / Math.max(toNum(slhN.rTTS), toNum(slhN.lTTS))) * 100).toFixed(1);
+      slhParts.push(`Time to stabilization R: ${slhN.rTTS} s / L: ${slhN.lTTS} s (${ta}% asymmetry — ${parseFloat(ta) <= 10 ? "within" : "exceeds"} 10% threshold)`);
+    } else {
+      if (hasVal(slhN.rTTS)) slhParts.push(`Time to stabilization R: ${slhN.rTTS} s`);
+      if (hasVal(slhN.lTTS)) slhParts.push(`Time to stabilization L: ${slhN.lTTS} s`);
+    }
+    slhParts.forEach(p => add(p));
     br();
   }
 
@@ -991,16 +1033,6 @@ function Tab1({ data: d, setData: setD }) {
     { key: "modRSI",            label: "Modified RSI",                       unit: "" },
     { key: "classification",    label: "Classification", type: "select", options: ["Within Normal Limits","Mild Asymmetry","Moderate Asymmetry","Significant Asymmetry"] },
     { key: "clinicalNote",      label: "Clinical Note", type: "textarea", placeholder: "e.g. Jump height consistent with normative data; asymmetry driven by reduced concentric output on involved side…" },
-  ];
-  const valdSLDJFields = [
-    { key: "invRSI",            label: `RSI — ${inv}`,                      unit: "" },
-    { key: "uninvRSI",          label: `RSI — ${uninv}`,                    unit: "" },
-    { key: "eccBrakingImpAsym", label: "Max Eccentric Braking Impulse Asym", unit: "%" },
-    { key: "eccBrakingImpCov",  label: "Eccentric Braking Impulse CoV",     unit: "%" },
-    { key: "concPeakForceAsym", label: "Max Concentric Peak Force Asym",    unit: "%" },
-    { key: "concPeakForceCov",  label: "Concentric Peak Force CoV",         unit: "%" },
-    { key: "classification",    label: "Classification", type: "select", options: ["Within Normal Limits","Mild Asymmetry","Moderate Asymmetry","Significant Asymmetry"] },
-    { key: "clinicalNote",      label: "Clinical Note", type: "textarea", placeholder: "e.g. RSI asymmetry exceeds threshold; patient demonstrates protective unloading strategy on landing…" },
   ];
 
   const setVald = (section, key, val) => sd(section, { ...(d[section] || {}), [key]: val });
@@ -1255,17 +1287,79 @@ function Tab1({ data: d, setData: setD }) {
           </div>
         )} />
 
-      {/* Vald — SLDJ */}
-      <ValdCard title="Single Leg Drop Jump — Vald ForceDecks" id="ValdSLDJ"
-        fields={valdSLDJFields} values={d.valdSLDJ || {}}
-        onChange={(k, v) => setVald("valdSLDJ", k, v)}
-        focusable activeCard={activeCard} setActiveCard={setActiveCard}
-        highlight={(vals) => (vals.invRSI || vals.uninvRSI) && (
-          <div style={{ marginTop: 12, display: "flex", gap: 24 }}>
-            {vals.invRSI && <div><div style={{ ...lbl, marginBottom: 3 }}>RSI {inv}</div><div style={{ fontSize: 22, fontWeight: 800, fontFamily: "monospace", color: lsiColor(parseFloat(vals.invRSI) >= parseFloat(vals.uninvRSI || 0) ? "90" : "70") }}>{vals.invRSI}</div></div>}
-            {vals.uninvRSI && <div><div style={{ ...lbl, marginBottom: 3 }}>RSI {uninv}</div><div style={{ fontSize: 22, fontWeight: 800, fontFamily: "monospace", color: LIME }}>{vals.uninvRSI}</div></div>}
-          </div>
-        )} />
+      {/* SL Land and Hold */}
+      {(() => {
+        const slh = d.slLandHold || {};
+        const setSLH = (k, v) => sd("slLandHold", { ...slh, [k]: v });
+        const forceAsym = hasVal(slh.rPeakForce) && hasVal(slh.lPeakForce) && Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce)) > 0
+          ? ((Math.abs(toNum(slh.rPeakForce) - toNum(slh.lPeakForce)) / Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce))) * 100).toFixed(1)
+          : null;
+        const ttsAsym = hasVal(slh.rTTS) && hasVal(slh.lTTS) && Math.max(toNum(slh.rTTS), toNum(slh.lTTS)) > 0
+          ? ((Math.abs(toNum(slh.rTTS) - toNum(slh.lTTS)) / Math.max(toNum(slh.rTTS), toNum(slh.lTTS))) * 100).toFixed(1)
+          : null;
+        const asymColor = (v) => {
+          const n = parseFloat(v);
+          if (isNaN(n)) return MUTED;
+          return n <= 10 ? LIME : n <= 15 ? GOLD : RED_BAD;
+        };
+        return (
+          <Card title="Single Leg Land and Hold" id="SLLandHold" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
+            <div style={{ fontSize: 11, color: MUTED, marginBottom: 14, lineHeight: 1.6 }}>
+              Record peak landing force and time to stabilization for each limb. Asymmetry is calculated as |R − L| / max(R, L) × 100. Benchmark: &lt;10% asymmetry for both measures.
+            </div>
+
+            {/* Peak Landing Force */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>Peak Landing Force</div>
+              <R2 mb={8}>
+                <Field label="Right" unit="N" value={slh.rPeakForce} onChange={v => setSLH("rPeakForce", v)} placeholder="—" />
+                <Field label="Left"  unit="N" value={slh.lPeakForce} onChange={v => setSLH("lPeakForce", v)} placeholder="—" />
+              </R2>
+              {forceAsym !== null && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>Force Asymmetry</span>
+                  <span style={{ fontSize: 22, fontWeight: 900, fontFamily: "monospace", color: asymColor(forceAsym) }}>{forceAsym}%</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: asymColor(forceAsym) }}>
+                    {parseFloat(forceAsym) <= 10 ? "✓ Within 10% threshold" : parseFloat(forceAsym) <= 15 ? "Borderline" : "Exceeds threshold"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Time to Stabilization */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: MUTED, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>Time to Stabilization</div>
+              <R2 mb={8}>
+                <Field label="Right" unit="sec" value={slh.rTTS} onChange={v => setSLH("rTTS", v)} placeholder="—" />
+                <Field label="Left"  unit="sec" value={slh.lTTS} onChange={v => setSLH("lTTS", v)} placeholder="—" />
+              </R2>
+              {ttsAsym !== null && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: MUTED, textTransform: "uppercase", letterSpacing: "0.1em" }}>TTS Asymmetry</span>
+                  <span style={{ fontSize: 22, fontWeight: 900, fontFamily: "monospace", color: asymColor(ttsAsym) }}>{ttsAsym}%</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: asymColor(ttsAsym) }}>
+                    {parseFloat(ttsAsym) <= 10 ? "✓ Within 10% threshold" : parseFloat(ttsAsym) <= 15 ? "Borderline" : "Exceeds threshold"}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <StatBar stats={[
+              { label: "Force R (N)", value: hasVal(slh.rPeakForce) ? slh.rPeakForce + " N" : null, color: WHITE },
+              { label: "Force L (N)", value: hasVal(slh.lPeakForce) ? slh.lPeakForce + " N" : null, color: WHITE },
+              { label: "Force Asym",  value: forceAsym ? forceAsym + "%" : null, color: asymColor(forceAsym) },
+              { label: "TTS R (sec)", value: hasVal(slh.rTTS) ? slh.rTTS + " s" : null, color: WHITE },
+              { label: "TTS L (sec)", value: hasVal(slh.lTTS) ? slh.lTTS + " s" : null, color: WHITE },
+              { label: "TTS Asym",   value: ttsAsym ? ttsAsym + "%" : null, color: asymColor(ttsAsym) },
+            ]} />
+            <div style={{ marginTop: 10, padding: "8px 14px", background: "#0f0f0f", borderRadius: 6, border: `1px solid ${BORDER}`, display: "flex", gap: 20, flexWrap: "wrap" }}>
+              {[["≤10% — Within Threshold", LIME],["11–15% — Borderline", GOLD],[">15% — Exceeds Threshold", RED_BAD]].map(([l,c]) => (
+                <span key={l} style={{ fontSize: 11, fontWeight: 700, color: c }}>■ {l}</span>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Y-Balance */}
       <Card title="Y-Balance Test" id="YBalance" focusable activeCard={activeCard} setActiveCard={setActiveCard}>
@@ -1574,7 +1668,18 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
       torLSI,
       sqLSI:      (sd.valdSquat || {}).lsiPct  || null,
       cmjHeight:  (sd.valdCMJ   || {}).jumpHeight || null,
-      sldj:       (sd.valdSLDJ  || {}).invRSI  || null,
+      slForceAsym: (() => {
+        const s = sd.slLandHold || {};
+        if (!hasVal(s.rPeakForce) || !hasVal(s.lPeakForce)) return null;
+        const mx = Math.max(toNum(s.rPeakForce), toNum(s.lPeakForce));
+        return mx > 0 ? ((Math.abs(toNum(s.rPeakForce) - toNum(s.lPeakForce)) / mx) * 100).toFixed(1) : null;
+      })(),
+      slTTSAsym: (() => {
+        const s = sd.slLandHold || {};
+        if (!hasVal(s.rTTS) || !hasVal(s.lTTS)) return null;
+        const mx = Math.max(toNum(s.rTTS), toNum(s.lTTS));
+        return mx > 0 ? ((Math.abs(toNum(s.rTTS) - toNum(s.lTTS)) / mx) * 100).toFixed(1) : null;
+      })(),
       ybInv,
       hopSingle:  calcLSI(hAvgSI, hAvgSU),
       hopTriple:  calcLSI(hAvgTI, hAvgTU),
@@ -1619,8 +1724,9 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
     { label: "KE LSI (%)",             key: "keLSI",     u: "%",     higher: true,  group: "strength",  spark: true },
     { label: "Quad Index (%)",         key: "torLSI",    u: "%",     higher: true,  group: "strength",  spark: true },
     { label: "Squat LSI (%)",          key: "sqLSI",     u: "%",     higher: true,  group: "strength",  spark: true },
-    { label: "CMJ Height (cm)",        key: "cmjHeight", u: " cm",   higher: true,  group: "power"     },
-    { label: `SLDJ RSI ${inv}`,        key: "sldj",      u: "",      higher: true,  group: "power"     },
+    { label: "CMJ Height (cm)",              key: "cmjHeight",   u: " cm",   higher: true,  group: "power"     },
+    { label: "SL Land Force Asym (%)",       key: "slForceAsym", u: "%",     higher: false, group: "power"     },
+    { label: "SL Land TTS Asym (%)",         key: "slTTSAsym",   u: "%",     higher: false, group: "power"     },
     { label: `Y-Balance ${inv} (%)`,   key: "ybInv",     u: "%",     higher: true,  group: "balance",   spark: true },
     { label: "Single Hop LSI (%)",     key: "hopSingle", u: "%",     higher: true,  group: "hop",       spark: true },
     { label: "Triple Hop LSI (%)",     key: "hopTriple", u: "%",     higher: true,  group: "hop",       spark: true },
@@ -1818,7 +1924,7 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
 
     // ── Vald force platform ──
     const cmj = d.valdCMJ || {};
-    const sldj = d.valdSLDJ || {};
+    const slh = d.slLandHold || {};
     const valdParts = [];
     if (hasVal(cmj.eccBrakingImpAsym) || hasVal(cmj.concPeakForceAsym)) {
       let s = "CMJ force platform testing";
@@ -1835,20 +1941,18 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
       s += ` reveals ${cmjMetrics.join("; ")}`;
       valdParts.push(s);
     }
-    if (hasVal(sldj.eccBrakingImpAsym) || hasVal(sldj.concPeakForceAsym)) {
-      let s = "single-leg drop jump";
-      const sldjMetrics = [];
-      if (hasVal(sldj.eccBrakingImpAsym)) {
-        const v = n(sldj.eccBrakingImpAsym);
-        sldjMetrics.push(`eccentric braking impulse asymmetry ${sldj.eccBrakingImpAsym}% (${v <= 10 ? "within" : "exceeds"} ≤10% threshold)`);
+    if (hasVal(slh.rPeakForce) && hasVal(slh.lPeakForce)) {
+      const mx = Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce));
+      const fa = mx > 0 ? ((Math.abs(toNum(slh.rPeakForce) - toNum(slh.lPeakForce)) / mx) * 100).toFixed(1) : null;
+      if (fa !== null) {
+        let s = `single-leg land and hold shows peak landing force asymmetry of ${fa}% (${parseFloat(fa) <= 10 ? "within" : "exceeds"} the ≤10% threshold)`;
+        if (hasVal(slh.rTTS) && hasVal(slh.lTTS)) {
+          const tmx = Math.max(toNum(slh.rTTS), toNum(slh.lTTS));
+          const ta = tmx > 0 ? ((Math.abs(toNum(slh.rTTS) - toNum(slh.lTTS)) / tmx) * 100).toFixed(1) : null;
+          if (ta !== null) s += `; time to stabilization asymmetry ${ta}% (${parseFloat(ta) <= 10 ? "within" : "exceeds"} threshold)`;
+        }
+        valdParts.push(s);
       }
-      if (hasVal(sldj.concPeakForceAsym)) {
-        const v = n(sldj.concPeakForceAsym);
-        sldjMetrics.push(`concentric peak force asymmetry ${sldj.concPeakForceAsym}% (${v <= 10 ? "within" : "exceeds"} ≤10% threshold)`);
-      }
-      if (sldj.invRSI) sldjMetrics.push(`involved RSI ${sldj.invRSI}`);
-      s += ` shows ${sldjMetrics.join("; ")}`;
-      valdParts.push(s);
     }
     if (valdParts.length > 0) {
       sentences.push("Force platform assessment: " + valdParts.join("; ") + ".");
@@ -2588,12 +2692,10 @@ function Tab3({ currentData: d }) {
               ],
             },
             {
-              title: "Force Platform — SL Drop Jump (within 10% asymmetry & CoV)",
+              title: "SL Land and Hold (peak force and TTS asymmetry ≤ 10%)",
               criteria: [
-                { text: "Max eccentric braking impulse asymmetry ≤ 10%", detail: hasVal(d.valdSLDJ?.eccBrakingImpAsym) ? `Current: ${d.valdSLDJ.eccBrakingImpAsym}%` : "Vald SLDJ data not entered", met: hasVal(d.valdSLDJ?.eccBrakingImpAsym) ? parseFloat(d.valdSLDJ.eccBrakingImpAsym) <= 10 : null },
-                { text: "Eccentric braking impulse CoV ≤ 10%",           detail: hasVal(d.valdSLDJ?.eccBrakingImpCov)  ? `Current: ${d.valdSLDJ.eccBrakingImpCov}%`  : "Vald SLDJ data not entered", met: hasVal(d.valdSLDJ?.eccBrakingImpCov)  ? parseFloat(d.valdSLDJ.eccBrakingImpCov)  <= 10 : null },
-                { text: "Max concentric peak force asymmetry ≤ 10%",     detail: hasVal(d.valdSLDJ?.concPeakForceAsym) ? `Current: ${d.valdSLDJ.concPeakForceAsym}%` : "Vald SLDJ data not entered", met: hasVal(d.valdSLDJ?.concPeakForceAsym) ? parseFloat(d.valdSLDJ.concPeakForceAsym) <= 10 : null },
-                { text: "Concentric peak force CoV ≤ 10%",               detail: hasVal(d.valdSLDJ?.concPeakForceCov)  ? `Current: ${d.valdSLDJ.concPeakForceCov}%`  : "Vald SLDJ data not entered", met: hasVal(d.valdSLDJ?.concPeakForceCov)  ? parseFloat(d.valdSLDJ.concPeakForceCov)  <= 10 : null },
+                { text: "Peak landing force asymmetry ≤ 10%", detail: (() => { const s = d.slLandHold || {}; if (!hasVal(s.rPeakForce) || !hasVal(s.lPeakForce)) return "SL Land and Hold data not entered"; const fa = ((Math.abs(toNum(s.rPeakForce) - toNum(s.lPeakForce)) / Math.max(toNum(s.rPeakForce), toNum(s.lPeakForce))) * 100).toFixed(1); return `Current: ${fa}%`; })(), met: (() => { const s = d.slLandHold || {}; if (!hasVal(s.rPeakForce) || !hasVal(s.lPeakForce)) return null; const fa = (Math.abs(toNum(s.rPeakForce) - toNum(s.lPeakForce)) / Math.max(toNum(s.rPeakForce), toNum(s.lPeakForce))) * 100; return fa <= 10; })() },
+                { text: "Time to stabilization asymmetry ≤ 10%", detail: (() => { const s = d.slLandHold || {}; if (!hasVal(s.rTTS) || !hasVal(s.lTTS)) return "SL Land and Hold data not entered"; const ta = ((Math.abs(toNum(s.rTTS) - toNum(s.lTTS)) / Math.max(toNum(s.rTTS), toNum(s.lTTS))) * 100).toFixed(1); return `Current: ${ta}%`; })(), met: (() => { const s = d.slLandHold || {}; if (!hasVal(s.rTTS) || !hasVal(s.lTTS)) return null; const ta = (Math.abs(toNum(s.rTTS) - toNum(s.lTTS)) / Math.max(toNum(s.rTTS), toNum(s.lTTS))) * 100; return ta <= 10; })() },
               ],
             },
             {
@@ -3192,7 +3294,7 @@ function sanitizePdf(str) {
     .replace(/[^\x00-\xFF]/g, "?"); // catch-all for any other non-Latin-1 chars
 }
 
-async function saveSessionPDF(data, preOpened = null) {
+async function saveSessionPDF(data, mode = "download") {
   const { PDFDocument, rgb, StandardFonts } = await getPdfLib();
   const doc = await PDFDocument.create();
 
@@ -3445,10 +3547,10 @@ async function saveSessionPDF(data, preOpened = null) {
   const row = (label, value, x2 = null, label2 = null, value2 = null) => {
     if (y < 60) addNewPage();
     page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
-    page.drawText(sanitizePdf(String(value || "—")), { x: L + 138, y, size: 8.5, font, color: value ? BLACK_R : LGRAY });
+    page.drawText(sanitizePdf(String(value || "—")), { x: L + 155, y, size: 8.5, font, color: value ? BLACK_R : LGRAY });
     if (x2 && label2) {
       page.drawText(sanitizePdf(label2), { x: x2, y, size: 8.5, font: fontBold, color: BLACK_R });
-      page.drawText(sanitizePdf(String(value2 || "—")), { x: x2 + 138, y, size: 8.5, font, color: value2 ? BLACK_R : LGRAY });
+      page.drawText(sanitizePdf(String(value2 || "—")), { x: x2 + 155, y, size: 8.5, font, color: value2 ? BLACK_R : LGRAY });
     }
     y -= 12;
   };
@@ -3460,9 +3562,9 @@ async function saveSessionPDF(data, preOpened = null) {
     page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
     if (lsiVal !== null && lsiVal !== undefined) {
       const valStr = `${lsiVal}${unit}`;
-      page.drawText(sanitizePdf(valStr), { x: L + 138, y, size: 8.5, font: fontBold, color: st ? st.color : GRAY });
+      page.drawText(sanitizePdf(valStr), { x: L + 155, y, size: 8.5, font: fontBold, color: st ? st.color : GRAY });
       if (st) {
-        const chipX = L + 138 + fontBold.widthOfTextAtSize(valStr, 8.5) + 8;
+        const chipX = L + 155 + fontBold.widthOfTextAtSize(valStr, 8.5) + 8;
         const chipLabel = st.label;
         const chipW = fontBold.widthOfTextAtSize(chipLabel, 5.8) + 8;
         page.drawRectangle({ x: chipX, y: y - 2, width: chipW, height: 11, color: st.bg });
@@ -3470,7 +3572,7 @@ async function saveSessionPDF(data, preOpened = null) {
         page.drawText(sanitizePdf(chipLabel), { x: chipX + 4, y: y + 1, size: 5.8, font: fontBold, color: st.txt });
       }
     } else {
-      page.drawText(sanitizePdf("—"), { x: L + 138, y, size: 8.5, font, color: LGRAY });
+      page.drawText(sanitizePdf("—"), { x: L + 155, y, size: 8.5, font, color: LGRAY });
     }
     y -= 12;
   };
@@ -3496,7 +3598,7 @@ async function saveSessionPDF(data, preOpened = null) {
     row("Knee Extension — Right:", data.extR ? `${data.extR} deg` : null, col2, "Left:", data.extL ? `${data.extL} deg` : null);
     const fInv = invR ? data.flexR : data.flexL, fUninv = invR ? data.flexL : data.flexR;
     const fd = calcDiff(fInv, fUninv);
-    if (fd !== null) row(`Flexion Deficit (${inv} vs ${uninv}):`, `${fd} deg`);
+    if (fd !== null) row(`Flex Deficit (${inv}-${uninv}):`, `${fd} deg`);
     divider();
   }
 
@@ -3522,19 +3624,19 @@ async function saveSessionPDF(data, preOpened = null) {
     if (hasVal(data.keR) || hasVal(data.keL)) {
       row("KE Force — Right:", data.keR ? `${data.keR} lbs` : null, col2, "Left:", data.keL ? `${data.keL} lbs` : null);
       if (hasVal(data.tpfR) || hasVal(data.tpfL)) row("Time to Peak Force — R:", data.tpfR ? `${data.tpfR} s` : null, col2, "L:", data.tpfL ? `${data.tpfL} s` : null);
-      if (keLSI_p !== null) lsiRow(`KE Limb Symmetry Index (${inv} / ${uninv}):`, keLSI_p);
+      if (keLSI_p !== null) lsiRow(`KE LSI (${inv} / ${uninv}):`, keLSI_p);
     }
     if (hasVal(data.forceR) || hasVal(data.forceL)) {
       row("HHD Force — Right:", data.forceR ? `${data.forceR} lbs` : null, col2, "Left:", data.forceL ? `${data.forceL} lbs` : null);
       if (torRnm_p || torLnm_p) row("Torque at 90 deg — Right:", torRnm_p ? `${torRnm_p} Nm` : null, col2, "Left:", torLnm_p ? `${torLnm_p} Nm` : null);
       if (normR_p || normL_p)   row("Normalized — Right:", normR_p ? `${normR_p} Nm/kg` : null, col2, "Left:", normL_p ? `${normL_p} Nm/kg` : null);
-      if (torLSI_p !== null)    lsiRow(`Quadriceps Index (${inv} / ${uninv}):`, torLSI_p);
+      if (torLSI_p !== null)    lsiRow(`Quad Index (${inv} / ${uninv}):`, torLSI_p);
     }
     if (hasVal(data.hsR) || hasVal(data.hsL)) {
       row("Hamstring Force — Right:", data.hsR ? `${data.hsR} lbs` : null, col2, "Left:", data.hsL ? `${data.hsL} lbs` : null);
-      if (hsLSI_p !== null) lsiRow(`Hamstring LSI (${inv} / ${uninv}):`, hsLSI_p);
+      if (hsLSI_p !== null) lsiRow(`HS LSI (${inv} / ${uninv}):`, hsLSI_p);
       if (hqRR_p || hqRL_p) row("H:Q Ratio — Right:", hqRR_p ? `${hqRR_p}%` : null, col2, "Left:", hqRL_p ? `${hqRL_p}%` : null);
-      if (hqInv_p !== null) lsiRow(`H:Q Ratio — ${inv} (Involved):`, hqInv_p, hqStatus);
+      if (hqInv_p !== null) lsiRow(`H:Q Ratio (${inv}):`, hqInv_p, hqStatus);
     }
     divider();
   }
@@ -3570,9 +3672,9 @@ async function saveSessionPDF(data, preOpened = null) {
       if (y < 60) addNewPage();
       const flagged = parseFloat(antDiff_p) > 4;
       page.drawText(sanitizePdf("Anterior Side Difference:"), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
-      page.drawText(sanitizePdf(`${antDiff_p} cm`), { x: L + 138, y, size: 8.5, font, color: flagged ? RED_R : BLACK_R });
+      page.drawText(sanitizePdf(`${antDiff_p} cm`), { x: L + 155, y, size: 8.5, font, color: flagged ? RED_R : BLACK_R });
       if (flagged) {
-        const fx = L + 138 + font.widthOfTextAtSize(`${antDiff_p} cm`, 8.5) + 6;
+        const fx = L + 155 + font.widthOfTextAtSize(`${antDiff_p} cm`, 8.5) + 6;
         page.drawText(sanitizePdf("> 4 cm  CLINICALLY SIGNIFICANT"), { x: fx, y, size: 7, font: fontBold, color: RED_R });
       }
       y -= 12;
@@ -3602,7 +3704,7 @@ async function saveSessionPDF(data, preOpened = null) {
       const tampaSt = tv <= 17 ? { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: "<= 17  ACCEPTABLE" }
                     : tv <= 22 ? { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: "18-22  MILD KINESIO." }
                     :            { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: ">  22  ELEVATED" };
-      lsiRow("Tampa Scale of Kinesiophobia (TSK-11):", data.tampa.toString(), () => tampaSt, "");
+      lsiRow("Tampa Scale (TSK-11):", data.tampa.toString(), () => tampaSt, "");
     }
     divider();
   }
@@ -3613,8 +3715,6 @@ async function saveSessionPDF(data, preOpened = null) {
       rows: [["LSI", "lsiPct", "%"], ["Peak Force Asym", "peakForceAsym", "%"], ["Peak Force CoV", "peakForceCov", "%"], ["Classification", "classification", ""]] },
     { label: "CMJ — Vald ForceDecks", v: data.valdCMJ || {},
       rows: [["Jump Height", "jumpHeight", "cm"], ["Ecc Braking Asym", "eccBrakingImpAsym", "%"], ["Ecc Braking CoV", "eccBrakingImpCov", "%"], ["Conc PF Asym", "concPeakForceAsym", "%"], ["Modified RSI", "modRSI", ""], ["Classification", "classification", ""]] },
-    { label: "Single Leg Drop Jump — Vald ForceDecks", v: data.valdSLDJ || {},
-      rows: [[`RSI ${inv}`, "invRSI", ""], [`RSI ${uninv}`, "uninvRSI", ""], ["Ecc Braking Asym", "eccBrakingImpAsym", "%"], ["Conc PF Asym", "concPeakForceAsym", "%"], ["Classification", "classification", ""]] },
   ].filter(s => Object.values(s.v).some(v => v && v !== ""));
 
   if (valdSections.length > 0) {
@@ -3628,6 +3728,46 @@ async function saveSessionPDF(data, preOpened = null) {
         row(`  ${lbl}:`, unit ? `${v[key]}${unit}` : v[key]);
       });
     });
+    divider();
+  }
+
+  // ── SL LAND AND HOLD ──────────────────────────────────────────────────
+  const slh = data.slLandHold || {};
+  const slhHas = hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce) || hasVal(slh.rTTS) || hasVal(slh.lTTS);
+  if (slhHas) {
+    section("Single Leg Land and Hold");
+    if (hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce)) {
+      if (y < 60) addNewPage();
+      page.drawText(sanitizePdf("Peak Landing Force"), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
+      y -= 13;
+      if (hasVal(slh.rPeakForce)) row("  Right:", `${slh.rPeakForce} N`);
+      if (hasVal(slh.lPeakForce)) row("  Left:",  `${slh.lPeakForce} N`);
+      if (hasVal(slh.rPeakForce) && hasVal(slh.lPeakForce) && Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce)) > 0) {
+        const fa = ((Math.abs(toNum(slh.rPeakForce) - toNum(slh.lPeakForce)) / Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce))) * 100).toFixed(1);
+        const faSt = parseFloat(fa) <= 10
+          ? { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: `${fa}%  WITHIN THRESHOLD` }
+          : parseFloat(fa) <= 15
+          ? { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: `${fa}%  BORDERLINE` }
+          : { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: `${fa}%  EXCEEDS THRESHOLD` };
+        lsiRow("  Force Asymmetry:", fa, () => faSt, "%");
+      }
+    }
+    if (hasVal(slh.rTTS) || hasVal(slh.lTTS)) {
+      if (y < 60) addNewPage();
+      page.drawText(sanitizePdf("Time to Stabilization"), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
+      y -= 13;
+      if (hasVal(slh.rTTS)) row("  Right:", `${slh.rTTS} sec`);
+      if (hasVal(slh.lTTS)) row("  Left:",  `${slh.lTTS} sec`);
+      if (hasVal(slh.rTTS) && hasVal(slh.lTTS) && Math.max(toNum(slh.rTTS), toNum(slh.lTTS)) > 0) {
+        const ta = ((Math.abs(toNum(slh.rTTS) - toNum(slh.lTTS)) / Math.max(toNum(slh.rTTS), toNum(slh.lTTS))) * 100).toFixed(1);
+        const taSt = parseFloat(ta) <= 10
+          ? { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, label: `${ta}%  WITHIN THRESHOLD` }
+          : parseFloat(ta) <= 15
+          ? { color: GOLD_R, bg: GOLD_BG, txt: GOLD_TXT, label: `${ta}%  BORDERLINE` }
+          : { color: RED_R,  bg: RED_BG,  txt: RED_TXT,  label: `${ta}%  EXCEEDS THRESHOLD` };
+        lsiRow("  TTS Asymmetry:", ta, () => taSt, "%");
+      }
+    }
     divider();
   }
 
@@ -3663,54 +3803,41 @@ async function saveSessionPDF(data, preOpened = null) {
   const filename = `TRM_Session_${new Date().toISOString().slice(0,10)}.pdf`;
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
 
-  // PRIMARY: Web Share API with file support.
-  // Works in Chrome iOS, Chrome Android, and Safari iOS 15+.
-  // Shows the native OS share sheet (Save to Files, AirDrop, email, etc.).
-  // We deliberately avoid window.open() — Chrome on iOS blocks it as a popup
-  // when called after async/await, causing the PDF to flash and disappear.
-  const shareFile = new File([blob], filename, { type: "application/pdf" });
-  if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
-    try {
-      await navigator.share({ files: [shareFile], title: "TRM Session PDF" });
-    } catch (err) {
-      // AbortError = user dismissed the share sheet — not an error, do nothing.
-      if (err.name !== "AbortError") throw err;
+  // SHARE mode — always uses native OS share sheet (AirDrop, Save to Files, etc.)
+  if (mode === "share") {
+    const shareFile = new File([blob], filename, { type: "application/pdf" });
+    if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+      try {
+        await navigator.share({ files: [shareFile], title: "TRM Session PDF" });
+      } catch (err) {
+        if (err.name !== "AbortError") throw err;
+        // User dismissed share sheet — not an error
+      }
+      return "shared";
     }
-    return "shared";
+    return "share-unsupported";
   }
 
-  // FALLBACK A: Desktop (Safari, Chrome, Firefox) — open PDF in new tab for viewing
-  // AND trigger a download prompt so the user has both options simultaneously.
-  // Blob URL timeout extended to 30s to give the new tab time to fully load the PDF.
+  // DOWNLOAD mode — direct file save, skips share sheet on all devices
   const url = URL.createObjectURL(blob);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (!isIOS) {
-    // Open in new tab — user can view and save via browser PDF toolbar
-    window.open(url, "_blank");
-    // Also trigger download prompt — gives a direct save-to-disk option
+    // Desktop: trigger download dialog and open in new tab simultaneously
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.open(url, "_blank");
     setTimeout(() => URL.revokeObjectURL(url), 30000);
     return "downloaded";
   }
-
-  // FALLBACK B: iOS (Safari < v15, or Chrome iOS which doesn't support file-based Web Share).
-  // iOS ignores the 'download' attribute on blob URLs. We use the pre-opened window
-  // (opened synchronously in handleSave before any await, so Chrome's popup blocker
-  // doesn't kill it), then navigate it to the blob URL. On old Safari (no preOpened),
-  // fall back to window.open() — the user can then save via the share toolbar.
-  if (preOpened) {
-    preOpened.location.href = url;
-  } else {
-    window.open(url, "_blank");
-  }
+  // iOS: <a download> is ignored — open in new tab so user can save via browser toolbar
+  window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), 60000);
-  return "ios-fallback";
+  return "ios-tab";
 }
 
 async function loadSessionPDF(file, onData, onError) {
@@ -3757,9 +3884,9 @@ async function loadSessionPDF(file, onData, onError) {
       girth:   { ...BLANK_DATA.girth,   ...(raw.girth   || {}) },
       hops:    { ...BLANK_DATA.hops,    ...(raw.hops    || {}) },
       yBalance:{ ...BLANK_DATA.yBalance,...(raw.yBalance|| {}) },
-      valdSquat:{ ...BLANK_DATA.valdSquat,...(raw.valdSquat || {}) },
-      valdCMJ:  { ...BLANK_DATA.valdCMJ,  ...(raw.valdCMJ  || {}) },
-      valdSLDJ: { ...BLANK_DATA.valdSLDJ, ...(raw.valdSLDJ || {}) },
+      valdSquat:  { ...BLANK_DATA.valdSquat,  ...(raw.valdSquat  || {}) },
+      valdCMJ:    { ...BLANK_DATA.valdCMJ,    ...(raw.valdCMJ    || {}) },
+      slLandHold: { ...BLANK_DATA.slLandHold, ...(raw.slLandHold || {}) },
     };
     onData(sessionData);
   } catch (e) {
@@ -3777,7 +3904,8 @@ const BLANK_DATA = {
   tpfR: "", tpfL: "",
   hsR: "", hsL: "",
   ikdc: "", tampa: "",
-  valdSquat: {}, valdCMJ: {}, valdSLDJ: {},
+  valdSquat: {}, valdCMJ: {},
+  slLandHold: { rPeakForce: "", lPeakForce: "", rTTS: "", lTTS: "" },
   yBalance: { rAnt: "", rPM: "", rPL: "", lAnt: "", lPM: "", lPL: "" },
   hops: {
     singleI: [{ft:"",in:""},{ft:"",in:""},{ft:"",in:""}],
@@ -3905,26 +4033,31 @@ export default function App() {
     { label: "Letter",      sub: "Physician Communication" },
   ];
 
-  const handleSave = async () => {
+  const handleSavePDF = async () => {
     setSaving(true);
     try {
-      // Chrome on iOS blocks window.open() when called after await (async popup rules).
-      // Work-around: open the window synchronously HERE — before any async work —
-      // then saveSessionPDF will navigate it to the blob URL once the PDF is ready.
-      // We detect Chrome iOS by the "CriOS" token in the user-agent string.
-      const isChromeIOS = /CriOS/.test(navigator.userAgent);
-      const preOpened = isChromeIOS ? window.open("", "_blank") : null;
-
-      const result = await saveSessionPDF(data, preOpened);
-
-      // Fallback: old iOS Safari (< 15) or Chrome iOS — PDF opens in a new tab.
-      // Guide the user to save from the browser toolbar.
-      if (result === "ios-fallback") {
-        setLoadMsg({ type: "success", text: "PDF opened in a new tab — tap the Share icon (⬆) in your browser toolbar, then \"Save to Files\" to save it." });
+      const result = await saveSessionPDF(data, "download");
+      if (result === "ios-tab") {
+        setLoadMsg({ type: "success", text: "PDF opened in a new tab — tap the Share icon in your browser toolbar, then \"Save to Files\" to save it." });
         setTimeout(() => setLoadMsg(null), 12000);
       }
     } catch(e) {
       setLoadMsg({type:"error", text:"Save failed: " + e.message});
+      setTimeout(() => setLoadMsg(null), 8000);
+    }
+    setSaving(false);
+  };
+
+  const handleAirDrop = async () => {
+    setSaving(true);
+    try {
+      const result = await saveSessionPDF(data, "share");
+      if (result === "share-unsupported") {
+        setLoadMsg({ type: "error", text: "Sharing is not supported in this browser. Use Save PDF instead." });
+        setTimeout(() => setLoadMsg(null), 6000);
+      }
+    } catch(e) {
+      setLoadMsg({type:"error", text:"Share failed: " + e.message});
       setTimeout(() => setLoadMsg(null), 8000);
     }
     setSaving(false);
@@ -4076,50 +4209,72 @@ export default function App() {
 
       {/* ── SESSION BUTTONS ── */}
       <div className="trm-fab" style={{ position: "fixed", bottom: 24, right: 24, zIndex: 200, display: "flex", alignItems: "center", gap: 8 }}>
-        {/* New Patient */}
-        <button
-          onClick={() => setNewPtModal(true)}
-          style={{
-            padding: "6px 11px", borderRadius: 7,
-            border: `1px solid ${RED_BAD}44`, background: RED_BAD + "0f",
-            color: RED_BAD, cursor: "pointer", fontSize: 10, fontWeight: 800,
-            letterSpacing: "0.06em", textTransform: "uppercase",
-            boxShadow: `0 2px 10px rgba(0,0,0,0.5)`,
-          }}>
-          New Patient
-        </button>
 
-        {/* Divider */}
-        <div style={{ width: 1, height: 22, background: BORDER }} />
+        {/* Split: Reset | Load */}
+        <div style={{
+          display: "flex", alignItems: "stretch",
+          border: `1px solid ${BORDER}55`, borderRadius: 7, overflow: "hidden",
+          boxShadow: "0 1px 6px rgba(0,0,0,0.3)",
+        }}>
+          <button
+            onClick={() => setNewPtModal(true)}
+            style={{
+              padding: "7px 9px",
+              background: "rgba(248,113,113,0.04)", color: RED_BAD + "99",
+              border: "none", cursor: "pointer",
+              fontSize: 9, fontWeight: 800,
+              letterSpacing: "0.07em", textTransform: "uppercase",
+            }}>
+            Reset
+          </button>
+          <div style={{ width: 1, background: BORDER + "66", flexShrink: 0 }} />
+          <button
+            onClick={() => fileInputRef.current.click()}
+            style={{
+              padding: "7px 9px",
+              background: "rgba(255,255,255,0.03)", color: "#666",
+              border: "none", cursor: "pointer",
+              fontSize: 9, fontWeight: 800,
+              letterSpacing: "0.07em", textTransform: "uppercase",
+            }}>
+            Load
+          </button>
+        </div>
 
-        {/* Load */}
-        <button
-          onClick={() => fileInputRef.current.click()}
-          style={{
-            padding: "6px 11px", borderRadius: 7,
-            border: `1px solid ${BORDER}`, background: "#1c1c1c",
-            color: "#999", cursor: "pointer", fontSize: 10, fontWeight: 800,
-            letterSpacing: "0.06em", textTransform: "uppercase",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.5)",
-          }}>
-          Load
-        </button>
+        {/* Split: Save PDF | ⬆ AirDrop */}
+        <div style={{
+          display: "flex", alignItems: "stretch",
+          border: `1px solid ${LIME}28`, borderRadius: 7, overflow: "hidden",
+          boxShadow: `0 1px 6px ${LIME}0a`,
+          opacity: saving ? 0.5 : 1,
+        }}>
+          <button
+            onClick={handleSavePDF}
+            disabled={saving}
+            style={{
+              padding: "7px 11px",
+              background: LIME + "0c", color: LIME + "cc",
+              border: "none", cursor: saving ? "default" : "pointer",
+              fontSize: 9, fontWeight: 800,
+              letterSpacing: "0.07em", textTransform: "uppercase",
+            }}>
+            {saving ? "Saving…" : "Save PDF"}
+          </button>
+          <div style={{ width: 1, background: LIME + "22", flexShrink: 0 }} />
+          <button
+            onClick={handleAirDrop}
+            disabled={saving}
+            title="Share / AirDrop"
+            style={{
+              padding: "7px 9px",
+              background: LIME + "0c", color: LIME + "cc",
+              border: "none", cursor: saving ? "default" : "pointer",
+              fontSize: 12, lineHeight: 1, display: "flex", alignItems: "center",
+            }}>
+            ⬆
+          </button>
+        </div>
 
-        {/* Save */}
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{
-            padding: "6px 13px", borderRadius: 7,
-            border: `1px solid ${LIME}55`, background: LIME + "18",
-            color: LIME, cursor: saving ? "default" : "pointer",
-            fontSize: 10, fontWeight: 800,
-            letterSpacing: "0.06em", textTransform: "uppercase",
-            boxShadow: `0 2px 10px ${LIME}18`,
-            opacity: saving ? 0.6 : 1,
-          }}>
-          {saving ? "Saving…" : "Save PDF"}
-        </button>
       </div>
     </div>
   );
