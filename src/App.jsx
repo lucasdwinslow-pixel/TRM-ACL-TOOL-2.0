@@ -17,6 +17,8 @@ if (typeof window !== "undefined") {
 
 const getPdfLib = () => _pdfLibPromise;
 
+
+
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const LIME = "#b8ff57";
 const LIME_DIM = "#8ed43c";
@@ -501,39 +503,51 @@ function buildNote(d) {
   const ybCompL = calcYBalance(yb.lAnt, yb.lPM, yb.lPL, d.limbLen);
 
   const lines = [];
-  const add = (l) => lines.push(l);
-  const addIf = (c, l) => { if (c) lines.push(l); };
-  const br = () => lines.push("");
+  const IND  = "   ";    // 3 spaces — measured values (Right/Left readings)
+  const IND2 = "      "; // 6 spaces — derived values (asymmetries, deficits, LSI, indices)
+  const add    = (l)    => lines.push(l);
+  const sub    = (l)    => lines.push(IND + l);
+  const sub2   = (l)    => lines.push(IND2 + l);
+  const addIf  = (c, l) => { if (c) lines.push(l); };
+  const subIf  = (c, l) => { if (c) lines.push(IND + l); };
+  const sub2If = (c, l) => { if (c) lines.push(IND2 + l); };
+  const br     = ()     => lines.push("");
 
   add("OBJECTIVE - ACL REHABILITATION TESTING"); br();
-  addIf(d.patient.date,             `Date of Testing: ${d.patient.date}`);
-  addIf(d.patient.surgeon,         `Surgeon: ${d.patient.surgeon}`);
-  addIf(d.patient.graftType,       `Graft Type: ${d.patient.graftType}`);
-  addIf(hasVal(d.patient.weeksPostOp), `Weeks Post-Op: ${d.patient.weeksPostOp}`);
-  add(`Involved Side: ${inv}`); br();
+  subIf(d.patient.date,                `Date of Testing: ${d.patient.date}`);
+  subIf(d.patient.surgeon,             `Surgeon: ${d.patient.surgeon}`);
+  subIf(d.patient.graftType,           `Graft Type: ${d.patient.graftType}`);
+  subIf(hasVal(d.patient.weeksPostOp), `Weeks Post-Op: ${d.patient.weeksPostOp}`);
+  sub(`Involved Side: ${inv}`); br();
 
   if (hasVal(d.bw) || hasVal(d.tib) || hasVal(d.limbLen)) {
     add("BODY METRICS");
-    addIf(hasVal(d.bw),      `Body Weight: ${d.bw} lbs`);
-    addIf(hasVal(d.tib),     `Tibial Length: ${d.tib} cm`);
-    addIf(hasVal(d.limbLen), `Limb Length (ASIS to MM): ${d.limbLen} cm`);
+    subIf(hasVal(d.bw),      `Body Weight: ${d.bw} lbs`);
+    subIf(hasVal(d.tib),     `Tibial Length: ${d.tib} cm`);
+    subIf(hasVal(d.limbLen), `Limb Length (ASIS to MM): ${d.limbLen} cm`);
     br();
   }
 
   if (hasVal(d.flexR) || hasVal(d.flexL) || hasVal(d.extR) || hasVal(d.extL)) {
     add("KNEE RANGE OF MOTION");
-    addIf(hasVal(d.flexR), `Knee Flexion - Right: ${d.flexR} degrees`);
-    addIf(hasVal(d.flexL), `Knee Flexion - Left: ${d.flexL} degrees`);
     const flexInv   = invR ? d.flexR : d.flexL;
     const flexUninv = invR ? d.flexL : d.flexR;
     const fd = calcDiff(flexInv, flexUninv);
-    addIf(fd !== null, `Knee Flexion Deficit (${inv}−${uninv}): ${fd} degrees`);
-    addIf(hasVal(d.extR), `Knee Extension - Right: ${d.extR} degrees`);
-    addIf(hasVal(d.extL), `Knee Extension - Left: ${d.extL} degrees`);
     const extInv   = invR ? d.extR : d.extL;
     const extUninv = invR ? d.extL : d.extR;
     const ed = calcDiff(extInv, extUninv);
-    addIf(ed !== null, `Knee Extension Deficit (${inv}−${uninv}): ${ed} degrees`);
+    if (hasVal(d.flexR) || hasVal(d.flexL)) {
+      sub("Knee Flexion:");
+      subIf(hasVal(d.flexR), `Right: ${d.flexR} degrees`);
+      subIf(hasVal(d.flexL), `Left: ${d.flexL} degrees`);
+      sub2If(fd !== null, `Flexion Deficit (${inv}-${uninv}): ${fd} degrees`);
+    }
+    if (hasVal(d.extR) || hasVal(d.extL)) {
+      sub("Knee Extension:");
+      subIf(hasVal(d.extR), `Right: ${d.extR} degrees`);
+      subIf(hasVal(d.extL), `Left: ${d.extL} degrees`);
+      sub2If(ed !== null, `Extension Deficit (${inv}-${uninv}): ${ed} degrees`);
+    }
     br();
   }
 
@@ -541,25 +555,27 @@ function buildNote(d) {
     add("QUAD GIRTH (proximal to superior patella border)");
     const rp = [hasVal(d.girth.r5) && `5cm: ${d.girth.r5}cm`, hasVal(d.girth.r10) && `10cm: ${d.girth.r10}cm`, hasVal(d.girth.r15) && `15cm: ${d.girth.r15}cm`].filter(Boolean);
     const lp = [hasVal(d.girth.l5) && `5cm: ${d.girth.l5}cm`, hasVal(d.girth.l10) && `10cm: ${d.girth.l10}cm`, hasVal(d.girth.l15) && `15cm: ${d.girth.l15}cm`].filter(Boolean);
-    addIf(rp.length > 0, `Right - ${rp.join("  ")}  Total: ${gR.toFixed(1)} cm`);
-    addIf(lp.length > 0, `Left - ${lp.join("  ")}  Total: ${gL.toFixed(1)} cm`);
-    addIf(gPct !== null, `Girth Asymmetry: ${gPct}% (${gSide})`);
+    if (rp.length > 0) { sub("Right:"); sub(`Total: ${gR.toFixed(1)} cm   (${rp.join("  ")})`); }
+    if (lp.length > 0) { sub("Left:"); sub(`Total: ${gL.toFixed(1)} cm   (${lp.join("  ")})`); }
+    sub2If(gPct !== null, `Girth Asymmetry: ${gPct}% (${gSide})`);
     br();
   }
 
   if (hasVal(d.keR) || hasVal(d.keL)) {
     add("KNEE EXTENSION STRENGTH");
-    addIf(hasVal(d.keR), `Right: ${d.keR} lbs`);
-    addIf(hasVal(d.keL), `Left: ${d.keL} lbs`);
+    sub("Peak Force:");
+    subIf(hasVal(d.keR), `Right: ${d.keR} lbs`);
+    subIf(hasVal(d.keL), `Left: ${d.keL} lbs`);
     const kd = calcDiff(d.keR, d.keL);
-    addIf(kd !== null, `Difference (R-L): ${kd} lbs`);
-    addIf(keLSI !== null, `Limb Symmetry Index (${inv} / ${uninv}): ${keLSI}%`);
+    sub2If(kd !== null, `Difference (R-L): ${kd} lbs`);
+    sub2If(keLSI !== null, `Limb Symmetry Index (${inv} / ${uninv}): ${keLSI}%`);
     if (hasVal(d.tpfR) || hasVal(d.tpfL)) {
-      addIf(hasVal(d.tpfR), `Time to Peak Force - Right: ${d.tpfR} sec`);
-      addIf(hasVal(d.tpfL), `Time to Peak Force - Left: ${d.tpfL} sec`);
+      sub("Time to Peak Force:");
+      subIf(hasVal(d.tpfR), `Right: ${d.tpfR} sec`);
+      subIf(hasVal(d.tpfL), `Left: ${d.tpfL} sec`);
       if (hasVal(d.tpfR) && hasVal(d.tpfL)) {
         const tpfAsym = (Math.abs(toNum(d.tpfR) - toNum(d.tpfL)) / Math.max(toNum(d.tpfR), toNum(d.tpfL)) * 100).toFixed(1);
-        addIf(true, `Time to Peak Force Asymmetry: ${tpfAsym}%${parseFloat(tpfAsym) <= 10 ? " ✓ Within 10% threshold" : " — Exceeds 10% threshold"}`);
+        sub2(`Asymmetry: ${tpfAsym}%${parseFloat(tpfAsym) <= 10 ? " -- Within 10% threshold" : " -- Exceeds 10% threshold"}`);
       }
     }
     br();
@@ -567,9 +583,17 @@ function buildNote(d) {
 
   if (torRnm || torLnm) {
     add("ISOMETRIC QUAD TORQUE - 90 DEGREE KNEE FLEXION (HHD)");
-    addIf(hasVal(d.forceR) && torRnm, `Right: ${d.forceR} lbs  Torque: ${torRnm} Nm${normR ? `  Normalized: ${normR} Nm/kg` : ""}`);
-    addIf(hasVal(d.forceL) && torLnm, `Left: ${d.forceL} lbs  Torque: ${torLnm} Nm${normL ? `  Normalized: ${normL} Nm/kg` : ""}`);
-    addIf(torLSI !== null, `Quadriceps Index (${inv} / ${uninv}): ${torLSI}%`);
+    if (hasVal(d.forceR) && torRnm) {
+      sub("Right:");
+      sub(`Force: ${d.forceR} lbs`);
+      sub2(`Torque: ${torRnm} Nm${normR ? `   Normalized: ${normR} Nm/kg` : ""}`);
+    }
+    if (hasVal(d.forceL) && torLnm) {
+      sub("Left:");
+      sub(`Force: ${d.forceL} lbs`);
+      sub2(`Torque: ${torLnm} Nm${normL ? `   Normalized: ${normL} Nm/kg` : ""}`);
+    }
+    sub2If(torLSI !== null, `Quadriceps Index (${inv} / ${uninv}): ${torLSI}%`);
     br();
   }
 
@@ -585,16 +609,29 @@ function buildNote(d) {
 
   if (hasVal(d.hsR) || hasVal(d.hsL)) {
     add("ISOMETRIC HAMSTRING STRENGTH (HHD)");
-    addIf(hasVal(d.hsR) && hsTorRnm_n, `Right: ${d.hsR} lbs  Torque: ${hsTorRnm_n} Nm${hsNormR_n ? `  Normalized: ${hsNormR_n} Nm/kg` : ""}`);
-    addIf(hasVal(d.hsL) && hsTorLnm_n, `Left: ${d.hsL} lbs  Torque: ${hsTorLnm_n} Nm${hsNormL_n ? `  Normalized: ${hsNormL_n} Nm/kg` : ""}`);
-    addIf(hsLSI_n !== null, `Hamstring LSI (${inv} / ${uninv}): ${hsLSI_n}%`);
-    addIf(hqR_n !== null, `H:Q Ratio - Right: ${hqR_n}% (Benchmark ≥60%)`);
-    addIf(hqL_n !== null, `H:Q Ratio - Left: ${hqL_n}% (Benchmark ≥60%)`);
-    if (hqInv_n) addIf(true, `H:Q Ratio - ${inv} (Involved): ${hqInv_n}%${parseFloat(hqInv_n) >= 60 ? " ✓ Meets benchmark" : parseFloat(hqInv_n) >= 50 ? " — Borderline" : " ✗ Below benchmark"}`);
+    if (hasVal(d.hsR)) {
+      sub("Right:");
+      sub(`Force: ${d.hsR} lbs`);
+      if (hsTorRnm_n) sub2(`Torque: ${hsTorRnm_n} Nm${hsNormR_n ? `   Normalized: ${hsNormR_n} Nm/kg` : ""}`);
+    }
+    if (hasVal(d.hsL)) {
+      sub("Left:");
+      sub(`Force: ${d.hsL} lbs`);
+      if (hsTorLnm_n) sub2(`Torque: ${hsTorLnm_n} Nm${hsNormL_n ? `   Normalized: ${hsNormL_n} Nm/kg` : ""}`);
+    }
+    sub2If(hsLSI_n !== null, `Hamstring LSI (${inv} / ${uninv}): ${hsLSI_n}%`);
+    sub2If(hqR_n !== null, `H:Q Ratio - Right: ${hqR_n}% (Benchmark >=60%)`);
+    sub2If(hqL_n !== null, `H:Q Ratio - Left: ${hqL_n}% (Benchmark >=60%)`);
+    if (hqInv_n) sub2(`H:Q Ratio - ${inv} (Involved): ${hqInv_n}%${parseFloat(hqInv_n) >= 60 ? " -- Meets benchmark" : parseFloat(hqInv_n) >= 50 ? " -- Borderline" : " -- Below benchmark"}`);
     br();
   }
 
-  // Vald
+  // Vald — raw measurements at 3 spaces, derived asymmetry/CoV at 6 spaces
+  const valdDerivedFields = new Set([
+    "peakForceAsym","peakForceCov",                          // Squat derived
+    "eccBrakingImpAsym","eccBrakingImpCov",                  // CMJ derived
+    "concPeakForceAsym","concPeakForceCov",                  // CMJ derived
+  ]);
   const valdMeta = [
     { key: "valdSquat", title: "SQUAT SYMMETRY - VALD FORCEDECKS",
       fields: ["lsiPct","peakForceAsym","peakForceCov","peakConForce","copPath","classification","clinicalNote"],
@@ -613,7 +650,8 @@ function buildNote(d) {
     fields.forEach(f => {
       const val = v[f]; if (!val || val === "") return;
       const unit = units[f] || "";
-      add(`${labels[f]}: ${val}${unit && !["classification","clinicalNote"].includes(f) ? " " + unit : ""}`);
+      const text = `${labels[f]}: ${val}${unit && !["classification","clinicalNote"].includes(f) ? " " + unit : ""}`;
+      if (valdDerivedFields.has(f)) sub2(text); else sub(text);
     });
     br();
   });
@@ -623,21 +661,21 @@ function buildNote(d) {
   if (hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce) || hasVal(slh.rTTS) || hasVal(slh.lTTS)) {
     add("SINGLE LEG LAND AND HOLD");
     if (hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce)) {
-      add("Peak Landing Force:");
-      addIf(hasVal(slh.rPeakForce), `  Right: ${slh.rPeakForce} N`);
-      addIf(hasVal(slh.lPeakForce), `  Left:  ${slh.lPeakForce} N`);
+      sub("Peak Landing Force:");
+      subIf(hasVal(slh.rPeakForce), `Right: ${slh.rPeakForce} N`);
+      subIf(hasVal(slh.lPeakForce), `Left:  ${slh.lPeakForce} N`);
       if (hasVal(slh.rPeakForce) && hasVal(slh.lPeakForce) && Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce)) > 0) {
         const fa = ((Math.abs(toNum(slh.rPeakForce) - toNum(slh.lPeakForce)) / Math.max(toNum(slh.rPeakForce), toNum(slh.lPeakForce))) * 100).toFixed(1);
-        add(`  Force Asymmetry: ${fa}%${parseFloat(fa) <= 10 ? " -- Within 10% threshold" : parseFloat(fa) <= 15 ? " -- Borderline" : " -- Exceeds threshold"}`);
+        sub2(`Force Asymmetry: ${fa}%${parseFloat(fa) <= 10 ? " -- Within 10% threshold" : parseFloat(fa) <= 15 ? " -- Borderline" : " -- Exceeds threshold"}`);
       }
     }
     if (hasVal(slh.rTTS) || hasVal(slh.lTTS)) {
-      add("Time to Stabilization:");
-      addIf(hasVal(slh.rTTS), `  Right: ${slh.rTTS} sec`);
-      addIf(hasVal(slh.lTTS), `  Left:  ${slh.lTTS} sec`);
+      sub("Time to Stabilization:");
+      subIf(hasVal(slh.rTTS), `Right: ${slh.rTTS} sec`);
+      subIf(hasVal(slh.lTTS), `Left:  ${slh.lTTS} sec`);
       if (hasVal(slh.rTTS) && hasVal(slh.lTTS) && Math.max(toNum(slh.rTTS), toNum(slh.lTTS)) > 0) {
         const ta = ((Math.abs(toNum(slh.rTTS) - toNum(slh.lTTS)) / Math.max(toNum(slh.rTTS), toNum(slh.lTTS))) * 100).toFixed(1);
-        add(`  TTS Asymmetry: ${ta}%${parseFloat(ta) <= 10 ? " -- Within 10% threshold" : parseFloat(ta) <= 15 ? " -- Borderline" : " -- Exceeds threshold"}`);
+        sub2(`TTS Asymmetry: ${ta}%${parseFloat(ta) <= 10 ? " -- Within 10% threshold" : parseFloat(ta) <= 15 ? " -- Borderline" : " -- Exceeds threshold"}`);
       }
     }
     br();
@@ -647,23 +685,23 @@ function buildNote(d) {
   const ybHas = hasVal(yb.rAnt) || hasVal(yb.rPM) || hasVal(yb.rPL) || hasVal(yb.lAnt) || hasVal(yb.lPM) || hasVal(yb.lPL);
   if (ybHas) {
     add("Y-BALANCE TEST");
-    add("Benchmark: Composite score ≥ 90% of limb length. Anterior reach side difference > 4 cm is clinically significant.");
-    addIf(hasVal(d.limbLen), `Limb Length: ${d.limbLen} cm (applied both sides)`);
+    sub("Benchmark: Composite score >= 90% of limb length. Anterior reach side difference > 4 cm is clinically significant.");
+    subIf(hasVal(d.limbLen), `Limb Length: ${d.limbLen} cm (applied both sides)`);
     if (hasVal(d.limbLen)) {
-      add(`Right:`);
-      addIf(hasVal(yb.rAnt), `  Anterior: ${yb.rAnt} cm (${calcYDir(yb.rAnt, d.limbLen)}% LL)`);
-      addIf(hasVal(yb.rPM),  `  Posteromedial: ${yb.rPM} cm (${calcYDir(yb.rPM, d.limbLen)}% LL)`);
-      addIf(hasVal(yb.rPL),  `  Posterolateral: ${yb.rPL} cm (${calcYDir(yb.rPL, d.limbLen)}% LL)`);
-      addIf(ybCompR !== null, `  Composite Score: ${ybCompR}% limb length`);
-      add(`Left:`);
-      addIf(hasVal(yb.lAnt), `  Anterior: ${yb.lAnt} cm (${calcYDir(yb.lAnt, d.limbLen)}% LL)`);
-      addIf(hasVal(yb.lPM),  `  Posteromedial: ${yb.lPM} cm (${calcYDir(yb.lPM, d.limbLen)}% LL)`);
-      addIf(hasVal(yb.lPL),  `  Posterolateral: ${yb.lPL} cm (${calcYDir(yb.lPL, d.limbLen)}% LL)`);
-      addIf(ybCompL !== null, `  Composite Score: ${ybCompL}% limb length`);
+      sub("Right:");
+      subIf(hasVal(yb.rAnt), `Anterior: ${yb.rAnt} cm (${calcYDir(yb.rAnt, d.limbLen)}% LL)`);
+      subIf(hasVal(yb.rPM),  `Posteromedial: ${yb.rPM} cm (${calcYDir(yb.rPM, d.limbLen)}% LL)`);
+      subIf(hasVal(yb.rPL),  `Posterolateral: ${yb.rPL} cm (${calcYDir(yb.rPL, d.limbLen)}% LL)`);
+      sub2If(ybCompR !== null, `Composite Score: ${ybCompR}% limb length`);
+      sub("Left:");
+      subIf(hasVal(yb.lAnt), `Anterior: ${yb.lAnt} cm (${calcYDir(yb.lAnt, d.limbLen)}% LL)`);
+      subIf(hasVal(yb.lPM),  `Posteromedial: ${yb.lPM} cm (${calcYDir(yb.lPM, d.limbLen)}% LL)`);
+      subIf(hasVal(yb.lPL),  `Posterolateral: ${yb.lPL} cm (${calcYDir(yb.lPL, d.limbLen)}% LL)`);
+      sub2If(ybCompL !== null, `Composite Score: ${ybCompL}% limb length`);
     }
     if (hasVal(yb.rAnt) && hasVal(yb.lAnt)) {
       const antDiff = Math.abs(toNum(yb.rAnt) - toNum(yb.lAnt)).toFixed(1);
-      add(`  Anterior Reach Side Difference: ${antDiff} cm${parseFloat(antDiff) > 4 ? " ⚠ EXCEEDS 4cm THRESHOLD" : ""}`);
+      sub2(`Anterior Reach Side Difference: ${antDiff} cm${parseFloat(antDiff) > 4 ? " -- EXCEEDS 4cm THRESHOLD" : ""}`);
     }
     br();
   }
@@ -679,26 +717,25 @@ function buildNote(d) {
   if (hopTests.length > 0) {
     add("HOP TESTING");
     hopTests.forEach(([name, i, u, lsiVal, unit]) => {
-      add(`${name}:`);
-      addIf(hasVal(i), `  ${inv} (Involved): ${i} ${unit}`);
-      addIf(hasVal(u), `  ${uninv} (Uninvolved): ${u} ${unit}`);
-      addIf(lsiVal !== null, `  LSI: ${lsiVal}%`);
-      br();
+      sub(`${name}:`);
+      subIf(hasVal(i), `${inv} (Involved): ${i} ${unit}`);
+      subIf(hasVal(u), `${uninv} (Uninvolved): ${u} ${unit}`);
+      sub2If(lsiVal !== null, `LSI: ${lsiVal}%`);
     });
-    add("LSI Benchmark: ≥90% meets RTS criteria. 80-89% borderline. <80% does not meet criteria.");
+    sub("LSI Benchmark: >=90% meets RTS criteria. 80-89% borderline. <80% does not meet criteria.");
     br();
   }
 
   if (hasVal(d.agilityTime)) {
     add("PRO AGILITY TEST (5-10-5)");
-    add(`Best Time: ${d.agilityTime} sec`);
+    sub(`Best Time: ${d.agilityTime} sec`);
     br();
   }
 
   if (hasVal(d.ikdc) || hasVal(d.tampa)) {
     add("PATIENT-REPORTED OUTCOMES");
-    addIf(hasVal(d.ikdc), `IKDC Subjective Knee Form: ${d.ikdc}/100${parseFloat(d.ikdc) >= 95 ? " ✓ Meets RTS threshold (≥95)" : parseFloat(d.ikdc) >= 80 ? " — Approaching threshold" : " — Below threshold"}`);
-    addIf(hasVal(d.tampa), `Tampa Scale of Kinesiophobia (TSK-11): ${d.tampa}${parseFloat(d.tampa) <= 17 ? " ✓ Acceptable fear levels (≤17)" : parseFloat(d.tampa) <= 22 ? " — Mild kinesiophobia" : " — Elevated kinesiophobia (>22)"}`);
+    subIf(hasVal(d.ikdc), `IKDC Subjective Knee Form: ${d.ikdc}/100${parseFloat(d.ikdc) >= 95 ? " -- Meets RTS threshold (>=95)" : parseFloat(d.ikdc) >= 80 ? " -- Approaching threshold" : " -- Below threshold"}`);
+    subIf(hasVal(d.tampa), `Tampa Scale of Kinesiophobia (TSK-11): ${d.tampa}${parseFloat(d.tampa) <= 17 ? " -- Acceptable fear levels (<=17)" : parseFloat(d.tampa) <= 22 ? " -- Mild kinesiophobia" : " -- Elevated kinesiophobia (>22)"}`);
     br();
   }
 
@@ -2209,11 +2246,15 @@ function Tab2({ currentData: d, sessions, setSessions, onAddSession }) {
 
 
 // ─── TAB 3: PROGRESSION CRITERIA ─────────────────────────────────────────────
-function Tab3({ currentData: d }) {
+function Tab3({ currentData: d, setData }) {
   // active = [trackIdx, sectionIdx within that track]
   const [active, setActive] = useState([0, 0]);
-  const [attested, setAttested] = useState({});
-  const toggleAttest = (key) => setAttested(prev => ({ ...prev, [key]: !prev[key] }));
+  // attested lives in main data so it persists via PDF save/load and QR restore
+  const attested = d.attested || {};
+  const toggleAttest = (key) => setData(prev => ({
+    ...prev,
+    attested: { ...prev.attested, [key]: !(prev.attested?.[key]) },
+  }));
 
   const invR = d.patient.involvedSide === "Right";
   const inv  = d.patient.involvedSide;
@@ -2363,12 +2404,12 @@ function Tab3({ currentData: d }) {
               ],
             },
             {
-              title: "Hop Testing — all ≥ 95% LSI",
+              title: "Hop Testing — all ≥ 90% LSI",
               criteria: [
-                { text: "Single hop for distance ≥ 95% LSI", detail: hopSingle !== null ? `Current: ${hopSingle}%` : "Hop data not entered", met: m(hopSingle, 95) },
-                { text: "Triple hop for distance ≥ 95% LSI", detail: hopTriple !== null ? `Current: ${hopTriple}%` : "Hop data not entered", met: m(hopTriple, 95) },
-                { text: "Triple crossover hop ≥ 95% LSI", detail: hopCross  !== null ? `Current: ${hopCross}%`  : "Hop data not entered", met: m(hopCross, 95) },
-                { text: "6m Timed Hop ≥ 95% LSI", detail: hopTimed !== null ? `Current: ${hopTimed}%` : "Hop data not entered", met: m(hopTimed, 95) },
+                { text: "Single hop for distance ≥ 90% LSI", detail: hopSingle !== null ? `Current: ${hopSingle}%` : "Hop data not entered", met: m(hopSingle, 90) },
+                { text: "Triple hop for distance ≥ 90% LSI", detail: hopTriple !== null ? `Current: ${hopTriple}%` : "Hop data not entered", met: m(hopTriple, 90) },
+                { text: "Triple crossover hop ≥ 90% LSI", detail: hopCross  !== null ? `Current: ${hopCross}%`  : "Hop data not entered", met: m(hopCross, 90) },
+                { text: "6m Timed Hop ≥ 90% LSI", detail: hopTimed !== null ? `Current: ${hopTimed}%` : "Hop data not entered", met: m(hopTimed, 90) },
               ],
             },
             {
@@ -2566,7 +2607,7 @@ function Tab3({ currentData: d }) {
             {
               title: "Phase 3 → 4 Prerequisite",
               criteria: [
-                { text: "All Phase 3 → Phase 4 criteria satisfied", detail: "Strength, hop testing, balance, and running milestones complete", met: and(m(hopSingle, 95), m(hopTriple, 95), m(hopCross, 95), mWks(20)) },
+                { text: "All Phase 3 → Phase 4 criteria satisfied", detail: "Strength, hop testing, balance, and running milestones complete", met: and(m(hopSingle, 90), m(hopTriple, 90), m(hopCross, 90), mWks(20)) },
               ],
             },
             {
@@ -2653,7 +2694,7 @@ function Tab3({ currentData: d }) {
             {
               title: "Quadriceps Strength",
               criteria: [
-                { text: "Limb Symmetry Index ≥ 95%", detail: keLSIdisp, met: m(keLSI, 95) },
+                { text: "Limb Symmetry Index ≥ 90%", detail: keLSIdisp, met: m(keLSI, 90) },
                 { text: "Peak force within 10% side-to-side", detail: (() => {
                   if (!hasVal(d.keR) || !hasVal(d.keL)) return "KE strength not entered (Testing tab)";
                   const asym = (Math.abs(toNum(d.keR) - toNum(d.keL)) / Math.max(toNum(d.keR), toNum(d.keL)) * 100).toFixed(1);
@@ -3270,8 +3311,9 @@ function Tab4({ currentData: d, setData }) {
   );
 }
 
-// ─── SESSION SAVE / LOAD ──────────────────────────────────────────────────────
-// Replaces characters outside WinAnsi (the default pdf-lib encoding) with safe ASCII equivalents
+
+
+
 function sanitizePdf(str) {
   if (str === null || str === undefined) return "";
   return String(str)
@@ -3298,9 +3340,12 @@ async function saveSessionPDF(data, mode = "download") {
   const { PDFDocument, rgb, StandardFonts } = await getPdfLib();
   const doc = await PDFDocument.create();
 
-  // Embed session data in PDF metadata
+  // Embed full session data in PDF metadata (existing dual-field strategy)
   const sessionJson = JSON.stringify(data);
-  const encoded = btoa(unescape(encodeURIComponent(sessionJson)));
+  const utf8Bytes = new TextEncoder().encode(sessionJson);
+  let binary = "";
+  utf8Bytes.forEach(b => { binary += String.fromCharCode(b); });
+  const encoded = btoa(binary);
   doc.setSubject("TRM_SESSION_V1:" + encoded);
   doc.setKeywords(["TRM_SESSION_V1:" + encoded]); // Backup — some PDF viewers strip Subject; Keywords survives
   doc.setTitle("TRM ACL Testing Session");
@@ -3536,7 +3581,7 @@ async function saveSessionPDF(data, mode = "download") {
   const col2 = L + Math.floor(CW / 2) + 4;
 
   const section = (title) => {
-    if (y < 90) addNewPage(); // need room for header + at least one row
+    if (y < 140) addNewPage(); // need room for header + at least one row
     y -= 4;
     page.drawRectangle({ x: L - 4, y: y - 3, width: CW + 8, height: 14, color: rgb(0.11, 0.11, 0.11) });
     page.drawRectangle({ x: L - 4, y: y - 3, width: 3,      height: 14, color: LIME_R });
@@ -3545,7 +3590,7 @@ async function saveSessionPDF(data, mode = "download") {
   };
 
   const row = (label, value, x2 = null, label2 = null, value2 = null) => {
-    if (y < 60) addNewPage();
+    if (y < 120) addNewPage();
     page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
     page.drawText(sanitizePdf(String(value || "—")), { x: L + 155, y, size: 8.5, font, color: value ? BLACK_R : LGRAY });
     if (x2 && label2) {
@@ -3557,7 +3602,7 @@ async function saveSessionPDF(data, mode = "download") {
 
   // Row with color-coded value + status chip inline
   const lsiRow = (label, lsiVal, statusFn = lsiStatus, unit = "%") => {
-    if (y < 60) addNewPage();
+    if (y < 120) addNewPage();
     const st = statusFn ? statusFn(lsiVal) : null;
     page.drawText(sanitizePdf(label), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
     if (lsiVal !== null && lsiVal !== undefined) {
@@ -3578,7 +3623,7 @@ async function saveSessionPDF(data, mode = "download") {
   };
 
   const divider = () => {
-    if (y < 70) { addNewPage(); return; }
+    if (y < 120) { addNewPage(); return; }
     page.drawLine({ start: {x: L, y}, end: {x: R, y}, thickness: 0.4, color: BORDER_R });
     y -= 8;
   };
@@ -3669,7 +3714,7 @@ async function saveSessionPDF(data, mode = "download") {
     if (ybCompR_p !== null) lsiRow("Composite Score — Right:", ybCompR_p, ybalStatus);
     if (ybCompL_p !== null) lsiRow("Composite Score — Left:", ybCompL_p, ybalStatus);
     if (antDiff_p !== null) {
-      if (y < 60) addNewPage();
+      if (y < 120) addNewPage();
       const flagged = parseFloat(antDiff_p) > 4;
       page.drawText(sanitizePdf("Anterior Side Difference:"), { x: L, y, size: 8.5, font: fontBold, color: BLACK_R });
       page.drawText(sanitizePdf(`${antDiff_p} cm`), { x: L + 155, y, size: 8.5, font, color: flagged ? RED_R : BLACK_R });
@@ -3720,7 +3765,7 @@ async function saveSessionPDF(data, mode = "download") {
   if (valdSections.length > 0) {
     section("Force Platform Testing (Vald ForceDecks)");
     valdSections.forEach(({ label, v, rows }) => {
-      if (y < 80) addNewPage();
+      if (y < 120) addNewPage();
       page.drawText(sanitizePdf(label), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
       y -= 13;
       rows.forEach(([lbl, key, unit]) => {
@@ -3737,7 +3782,7 @@ async function saveSessionPDF(data, mode = "download") {
   if (slhHas) {
     section("Single Leg Land and Hold");
     if (hasVal(slh.rPeakForce) || hasVal(slh.lPeakForce)) {
-      if (y < 60) addNewPage();
+      if (y < 120) addNewPage();
       page.drawText(sanitizePdf("Peak Landing Force"), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
       y -= 13;
       if (hasVal(slh.rPeakForce)) row("  Right:", `${slh.rPeakForce} N`);
@@ -3753,7 +3798,7 @@ async function saveSessionPDF(data, mode = "download") {
       }
     }
     if (hasVal(slh.rTTS) || hasVal(slh.lTTS)) {
-      if (y < 60) addNewPage();
+      if (y < 120) addNewPage();
       page.drawText(sanitizePdf("Time to Stabilization"), { x: L, y, size: 7.5, font: fontBold, color: GRAY });
       y -= 13;
       if (hasVal(slh.rTTS)) row("  Right:", `${slh.rTTS} sec`);
@@ -3773,8 +3818,9 @@ async function saveSessionPDF(data, mode = "download") {
 
   // ── INTERPRETATION LEGEND ─────────────────────────────────────────────
   const legendY = Math.min(y - 4, 70);
+  const legendMaxX = R;
   if (legendY > 36) {
-    page.drawLine({ start: {x: L, y: legendY + 14}, end: {x: R, y: legendY + 14}, thickness: 0.4, color: BORDER_R });
+    page.drawLine({ start: {x: L, y: legendY + 14}, end: {x: legendMaxX, y: legendY + 14}, thickness: 0.4, color: BORDER_R });
     page.drawText(sanitizePdf("INTERPRETATION:"), { x: L, y: legendY + 2, size: 6.5, font: fontBold, color: GRAY });
     const lgItems = [
       { color: LIME_R, bg: LIME_BG, txt: LIME_TXT, text: ">= 90% — Meets RTS criteria" },
@@ -3783,6 +3829,7 @@ async function saveSessionPDF(data, mode = "download") {
     ];
     let lx = L + fontBold.widthOfTextAtSize("INTERPRETATION:", 6.5) + 14;
     lgItems.forEach(({ color, bg, text }) => {
+      if (lx + 11 + font.widthOfTextAtSize(text, 6.5) > legendMaxX) return;
       page.drawRectangle({ x: lx, y: legendY, width: 8, height: 8, color: bg });
       page.drawRectangle({ x: lx, y: legendY + 6, width: 8, height: 2, color: color });
       page.drawText(sanitizePdf(text), { x: lx + 11, y: legendY + 1, size: 6.5, font, color: GRAY });
@@ -3790,15 +3837,18 @@ async function saveSessionPDF(data, mode = "download") {
     });
   }
 
-  // ── FOOTER ────────────────────────────────────────────────────────────
-  page.drawRectangle({ x: 0, y: 0, width, height: 26, color: DARK_R });
-  page.drawRectangle({ x: 0, y: 26, width, height: 1.5, color: LIME_R });
-  page.drawText(sanitizePdf("TRM  |  ACL Rehabilitation Testing Tool  —  Session data embedded. Upload to TRM app to restore."), {
-    x: L, y: 8, size: 6.5, font, color: rgb(0.44, 0.44, 0.44)
-  });
-  page.drawText(sanitizePdf(`Page ${pageCount} of ${pageCount}`), { x: R - font.widthOfTextAtSize(`Page ${pageCount} of ${pageCount}`, 6.5), y: 8, size: 6.5, font, color: rgb(0.38, 0.38, 0.38) });
+  // ── FOOTER (last page) ────────────────────────────────────────────────
+    page.drawRectangle({ x: 0, y: 0, width, height: 26, color: DARK_R });
+    page.drawRectangle({ x: 0, y: 26, width, height: 1.5, color: LIME_R });
+    page.drawText(sanitizePdf("TRM  |  ACL Rehabilitation Testing Tool"), {
+      x: L, y: 8, size: 6.5, font, color: rgb(0.44, 0.44, 0.44),
+    });
+    page.drawText(sanitizePdf(`Page ${pageCount} of ${pageCount}`), {
+      x: R - font.widthOfTextAtSize(`Page ${pageCount} of ${pageCount}`, 6.5),
+      y: 8, size: 6.5, font, color: rgb(0.38, 0.38, 0.38),
+    });
 
-  // ── DOWNLOAD ──────────────────────────────────────────────────────────
+// ── DOWNLOAD ──────────────────────────────────────────────────────────
   const pdfBytes = await doc.save();
   const filename = `TRM_Session_${new Date().toISOString().slice(0,10)}.pdf`;
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
@@ -3818,20 +3868,28 @@ async function saveSessionPDF(data, mode = "download") {
     return "share-unsupported";
   }
 
-  // DOWNLOAD mode — direct file save, skips share sheet on all devices
+  // DOWNLOAD mode — direct file save
   const url = URL.createObjectURL(blob);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
   if (!isIOS) {
-    // Desktop: trigger download dialog and open in new tab simultaneously
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    window.open(url, "_blank");
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    // Safari sometimes ignores <a download> on blob URLs — open in new tab as fallback.
+    // We delay slightly so the download attempt lands first, then open tab as backup.
+    // Do NOT call window.open synchronously after async work — Safari treats it as a popup.
+    if (isSafari) {
+      setTimeout(() => { window.open(url, "_blank"); }, 100);
+      setTimeout(() => URL.revokeObjectURL(url), 90000); // Safari needs more time
+    } else {
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    }
     return "downloaded";
   }
   // iOS: <a download> is ignored — open in new tab so user can save via browser toolbar
@@ -3873,8 +3931,19 @@ async function loadSessionPDF(file, onData, onError) {
       return;
     }
 
-    const json = decodeURIComponent(escape(atob(encoded)));
+    const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+    const json = new TextDecoder("utf-8").decode(bytes);
     const raw = JSON.parse(json);
+    _mergeAndDeliver(raw, onData);
+  } catch (e) {
+    onError("Could not read session data from this PDF. The file may be corrupted or was re-saved by an external PDF viewer which stripped the embedded data. (" + e.message + ")");
+  }
+}
+
+
+
+
+function _mergeAndDeliver(raw, onData) {
     // Deep-merge with BLANK_DATA so any fields added after the PDF was saved
     // are always present (prevents crashes when new keys are accessed).
     const sessionData = {
@@ -3887,11 +3956,9 @@ async function loadSessionPDF(file, onData, onError) {
       valdSquat:  { ...BLANK_DATA.valdSquat,  ...(raw.valdSquat  || {}) },
       valdCMJ:    { ...BLANK_DATA.valdCMJ,    ...(raw.valdCMJ    || {}) },
       slLandHold: { ...BLANK_DATA.slLandHold, ...(raw.slLandHold || {}) },
+      attested:   { ...(raw.attested || {}) },
     };
     onData(sessionData);
-  } catch (e) {
-    onError("Could not read session data from this PDF. The file may be corrupted or was re-saved by an external PDF viewer which stripped the embedded data. (" + e.message + ")");
-  }
 }
 
 // ─── BLANK DATA ───────────────────────────────────────────────────────────────
@@ -3919,6 +3986,7 @@ const BLANK_DATA = {
   agilityTime: "",
   noteText: "",
   impression: "",
+  attested: {},  // progression tab clinical checkbox states
 };
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
@@ -3963,7 +4031,21 @@ export default function App() {
         if (parsedData) {
           const hasData = parsedData.patient?.date || parsedData.patient?.surgeon || parsedData.bw || parsedData.tib;
           if (hasData) {
-            setData(parsedData);
+            // Deep-merge with BLANK_DATA so any fields added in newer versions
+            // are always present — prevents crashes if autosave is from an older build
+            const merged = {
+              ...BLANK_DATA,
+              ...parsedData,
+              patient:    { ...BLANK_DATA.patient,    ...(parsedData.patient    || {}) },
+              girth:      { ...BLANK_DATA.girth,      ...(parsedData.girth      || {}) },
+              hops:       { ...BLANK_DATA.hops,       ...(parsedData.hops       || {}) },
+              yBalance:   { ...BLANK_DATA.yBalance,   ...(parsedData.yBalance   || {}) },
+              valdSquat:  { ...BLANK_DATA.valdSquat,  ...(parsedData.valdSquat  || {}) },
+              valdCMJ:    { ...BLANK_DATA.valdCMJ,    ...(parsedData.valdCMJ    || {}) },
+              slLandHold: { ...BLANK_DATA.slLandHold, ...(parsedData.slLandHold || {}) },
+              attested:   { ...(parsedData.attested   || {}) },
+            };
+            setData(merged);
             setStorageRestored(true);
             setTimeout(() => setStorageRestored(false), 5000);
           }
@@ -4040,6 +4122,13 @@ export default function App() {
       if (result === "ios-tab") {
         setLoadMsg({ type: "success", text: "PDF opened in a new tab — tap the Share icon in your browser toolbar, then \"Save to Files\" to save it." });
         setTimeout(() => setLoadMsg(null), 12000);
+      } else {
+        // On Safari/MacBook the download dialog may not appear — PDF also opens in a new tab as backup
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        if (isSafari) {
+          setLoadMsg({ type: "success", text: "PDF saved. If no download dialog appeared, check the new tab that opened — use File → Export as PDF or the download icon to save it." });
+          setTimeout(() => setLoadMsg(null), 14000);
+        }
       }
     } catch(e) {
       setLoadMsg({type:"error", text:"Save failed: " + e.message});
@@ -4140,7 +4229,6 @@ export default function App() {
   return (
     <div style={{ background: BLACK, minHeight: "100vh", color: WHITE, fontFamily: "'Inter','Helvetica Neue',sans-serif" }}>
 
-      {/* ── MODALS ── */}
       <ConfirmModal
         open={confirmModal.open}
         fileName={confirmModal.fileName}
@@ -4198,7 +4286,7 @@ export default function App() {
         )}
         {activeTab === 0 && <Tab1 data={data} setData={setData} />}
         {activeTab === 1 && <Tab2 currentData={data} sessions={sessions} setSessions={setSessions} onAddSession={() => compareInputRef.current.click()} />}
-        {activeTab === 2 && <Tab3 currentData={data} />}
+        {activeTab === 2 && <Tab3 currentData={data} setData={setData} />}
         {activeTab === 3 && <Tab4 currentData={data} setData={setData} />}
       </div>
 
